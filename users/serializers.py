@@ -3,6 +3,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 
 
 from .models import Accountant, CustomUser
+from academic.models import Teacher
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -82,4 +83,11 @@ class AccountantSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Accountant
+        fields = "__all__"
+
+
+class TeacherSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = Teacher
         fields = "__all__"

@@ -1,15 +1,19 @@
-from rest_framework import generics, viewsets
+from rest_framework import viewsets
 from rest_framework.permissions import IsAuthenticated, IsAdminUser
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework_simplejwt.views import TokenObtainPairView
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from django.shortcuts import get_object_or_404
 
-from attendance.models import TeachersAttendance
-from attendance.serializers import TeachersAttendanceSerializer
-
+from academic.models import Teacher
 from .models import CustomUser as User, Accountant
-from .serializers import UserSerializer, UserSerializerWithToken, AccountantSerializer
+from .serializers import (
+    UserSerializer,
+    UserSerializerWithToken,
+    AccountantSerializer,
+    TeacherSerializer,
+)
 
 
 # Custom Token View
@@ -45,6 +49,17 @@ class AccountantViewSet(viewsets.ModelViewSet):
     serializer_class = AccountantSerializer
     permission_classes = [IsAuthenticated]
 
+    def get_permissions(self):
+        """
+        Override this method if you want to apply different permissions for different actions.
+        """
+        permissions = super().get_permissions()
+
+        if self.action in ["update", "partial_update", "destroy"]:
+            # Only admins can update or delete teachers
+            permissions = [IsAdminUser()]
+        return permissions
+
     def retrieve(self, request, pk=None):
         accountant = get_object_or_404(Accountant, pk=pk)
         serializer = self.get_serializer(accountant)
@@ -61,4 +76,40 @@ class AccountantViewSet(viewsets.ModelViewSet):
     def destroy(self, request, pk=None):
         accountant = get_object_or_404(Accountant, pk=pk)
         accountant.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+# Teacher Views
+class TeacherViewSet(viewsets.ModelViewSet):
+    queryset = Teacher.objects.all()
+    serializer_class = TeacherSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_permissions(self):
+        """
+        Override this method if you want to apply different permissions for different actions.
+        """
+        permissions = super().get_permissions()
+
+        if self.action in ["update", "partial_update", "destroy"]:
+            # Only admins can update or delete teachers
+            permissions = [IsAdminUser()]
+        return permissions
+
+    def retrieve(self, request, pk=None):
+        teacher = get_object_or_404(Teacher, pk=pk)
+        serializer = self.get_serializer(teacher)
+        return Response(serializer.data)
+
+    def update(self, request, pk=None):
+        teacher = get_object_or_404(Teacher, pk=pk)
+        serializer = self.get_serializer(teacher, data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def destroy(self, request, pk=None):
+        teacher = get_object_or_404(Teacher, pk=pk)
+        teacher.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)

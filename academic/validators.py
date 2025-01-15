@@ -7,46 +7,55 @@ from datetime import date
 
 
 def class_room_validator(value):
-	from .models import ClassRoom
-	if ClassRoom.objects.filter(name=value).exists():
-		raise ValidationError(_('{} already exists...!!!'.format(value)))
+    """Ensure the classroom name is unique."""
+    from .models import ClassRoom
+
+    if ClassRoom.objects.filter(name=value).exists():
+        raise ValidationError(_('"{}" already exists.'.format(value)))
 
 
 def subject_validator(value):
-	from .models import Subject
+    """Ensure the subject name is unique."""
+    from .models import Subject
 
-	if Subject.objects.filter(name=value).exists():
-		raise ValidationError(_('{} subject already exist....!!!'.format(value)))
+    if Subject.objects.filter(name=value).exists():
+        raise ValidationError(_('"{}" subject already exists.'.format(value)))
 
 
 def stream_validator(value):
-	from .models import Stream
-	if Stream.objects.filter(name=value).exists():
-		raise ValidationError(_('{} stream already exists...!!!'.format(value)))
+    """Ensure the stream name is unique."""
+    from .models import Stream
+
+    if Stream.objects.filter(name=value).exists():
+        raise ValidationError(_('"{}" stream already exists.'.format(value)))
 
 
 def students_date_of_birth_validator(value):
-	"""
-	this function is responsible o validating the students date of birth
-	if the students year of  birth is less than or equal to least_year_of_birth
-	then we raise a validation error
-	:imports Student from models
-	:param value:
-	:return:
-	"""
-	from .models import Student
-	required_age = 12
-	least_year_of_birth = date.today().year - required_age
+    """
+    Validate the student's date of birth to ensure the age is at least 13 years.
+    """
+    required_age = 13
+    least_year_of_birth = date.today().year - required_age
 
-	if value.year >= least_year_of_birth:
-		raise ValidationError(_('not valid date, student should be at least 13 years of age..!!!'))
+    if value.year > least_year_of_birth:
+        raise ValidationError(
+            _(
+                "Invalid date. The student must be at least {} years old.".format(
+                    required_age
+                )
+            )
+        )
 
 
 @deconstructible
 class ASCIIUsernameValidator(validators.RegexValidator):
-	regex = r'^[a-zA-Z]+\/(...)\/(....)'
-	message = _(
-		'Ener a valid username. This valu may contain only English letters,'
-		'numbers, and @/./+/-/_ characters.'
-	)
-	flags = re.ASCII
+    """
+    Validator for ASCII-based usernames with a specific pattern.
+    """
+
+    regex = r"^[a-zA-Z]+\/[a-zA-Z0-9]{3}\/\d{4}$"
+    message = _(
+        "Enter a valid username. This value must follow the pattern: "
+        "letters/three alphanumeric characters/four digits."
+    )
+    flags = re.ASCII

@@ -1,20 +1,20 @@
-from datetime import datetime
-from django.db import models
-
+from django.db import models, transaction
+from django.db.models import F
+from django.core.exceptions import ValidationError
+from django.core.validators import FileExtensionValidator
 from django.contrib.auth.models import Group
+from django.utils.translation import gettext_lazy as _
+from django.utils.crypto import get_random_string
 from django.utils import timezone
-
-from .validators import *
-
-from administration.common_objs import *
-from administration.models import AcademicYear
 from users.models import CustomUser
+from administration.models import AcademicYear
+from .validators import *
 
 
 class Department(models.Model):
     name = models.CharField(max_length=255, unique=True)
     order_rank = models.IntegerField(
-        blank=True, null=True, help_text="Rank that courses will show up in reports"
+        blank=True, null=True, help_text="Rank for course reports"
     )
 
     class Meta:
@@ -28,18 +28,12 @@ class Subject(models.Model):
     name = models.CharField(max_length=255, unique=True)
     subject_code = models.CharField(max_length=10, blank=True, null=True, unique=True)
     is_selectable = models.BooleanField(
-        default=False, help_text="select if subject is optional"
+        default=False, help_text="Select if subject is optional"
     )
-    graded = models.BooleanField(
-        default=True, help_text="Teachers can submit grades for this course"
-    )
+    graded = models.BooleanField(default=True, help_text="Teachers can submit grades")
     description = models.CharField(max_length=255, blank=True)
     department = models.ForeignKey(
-        Department,
-        on_delete=models.CASCADE,
-        blank=True,
-        null=True,
-        help_text="the department associated with this subject",
+        Department, on_delete=models.CASCADE, blank=True, null=True
     )
 
     def __str__(self):
@@ -48,29 +42,27 @@ class Subject(models.Model):
 
 class Teacher(models.Model):
     username = models.CharField(unique=True, max_length=250, blank=True)
-    first_name = models.CharField(max_length=300, verbose_name="First Name", blank=True)
+    first_name = models.CharField(max_length=300, blank=True)
     middle_name = models.CharField(max_length=100, blank=True)
-    last_name = models.CharField(max_length=300, verbose_name="Last Name", blank=True)
+    last_name = models.CharField(max_length=300, blank=True)
     gender = models.CharField(max_length=10, choices=GENDER_CHOICE, blank=True)
     email = models.EmailField(blank=True, null=True)
-    empId = models.CharField(max_length=8, null=True, blank=True, unique=True)
-    tin_number = models.CharField(max_length=9, null=True, blank=True)
-    nssf_number = models.CharField(max_length=9, null=True, blank=True)
-    short_name = models.CharField(max_length=3, null=True, blank=True, unique=True)
+    empId = models.CharField(max_length=8, unique=True, null=True, blank=True)
+    tin_number = models.CharField(max_length=9, blank=True, null=True)
+    nssf_number = models.CharField(max_length=9, blank=True, null=True)
+    short_name = models.CharField(max_length=3, blank=True, null=True, unique=True)
     isTeacher = models.BooleanField(default=True)
     salary = models.IntegerField(blank=True, null=True)
     subject_specialization = models.ManyToManyField(Subject, blank=True)
     national_id = models.CharField(max_length=100, blank=True, null=True)
     address = models.CharField(max_length=255, blank=True)
     phone_number = models.CharField(max_length=150, blank=True)
-    alt_email = models.EmailField(
-        blank=True,
-        null=True,
-        help_text="Personal Email apart from the one given by the school",
-    )
+    alt_email = models.EmailField(blank=True, null=True)
     date_of_birth = models.DateField(blank=True, null=True)
     designation = models.CharField(max_length=255, blank=True, null=True)
-    image = models.ImageField(upload_to="employee_images", blank=True, null=True)
+    image = models.ImageField(
+        upload_to="teachers/{}/images".format(empId), blank=True, null=True
+    )
     inactive = models.BooleanField(default=False)
 
     class Meta:
@@ -81,51 +73,33 @@ class Teacher(models.Model):
 
     @property
     def deleted(self):
-        # for backward compatibility
         return self.inactive
 
-    def save(
-        self, force_insert=False, force_update=False, using=None, update_fields=None
-    ):
-        #  check if the person is already a student
-        # if Student.objects.filter(id=self.id).count():
-        #    raise ValidationError("cannot have a someone be a student and a Teacher")
-        # create username
-        username = self.first_name + self.last_name
-        self.username = username
-        # save model
-        super(Teacher, self).save()
+    def save(self, *args, **kwargs):
+        # Generate unique username
+        if not self.username:
+            self.username = f"{self.first_name.lower()}{self.last_name.lower()}{get_random_string(4)}"
 
-        # create a user with default password as firstname and lastname
+        # Create corresponding user
+        super().save(*args, **kwargs)
         user, created = CustomUser.objects.get_or_create(
             email=self.email,
-            first_name=self.first_name,
-            last_name=self.last_name,
-            is_teacher=self.isTeacher,
+            defaults={
+                "first_name": self.first_name,
+                "last_name": self.last_name,
+                "is_teacher": self.isTeacher,
+            },
         )
         if created:
-            password = "Complex." + str(self.empId[4:])
-            user.set_password(password)
+            default_password = f"Complex.{self.empId[-4:] if self.empId and len(self.empId) >= 4 else '0000'}"
+            user.set_password(default_password)
             user.save()
-            # send the username and password to email
-            msg = (
-                "\nHey {} Welcome to {}, your username is {} and the default one time password is {}"
-                "Please login to your portal and change the password.."
-                "This password is valid for 24 hours only".format(
-                    (str(self.first_name) + str(self.last_name)),
-                    "this school ",
-                    self.email,
-                    user.password,
-                )
-            )
-            # mail_agent(self.alt_email, "Default user Name and password", msg)
 
-        # add the user to a Group
-        group, gcreated = Group.objects.get_or_create(name="teacher")
-        if gcreated:
-            group.save()
-        user.groups.add(group)
-        user.save()
+            # Add to "teacher" group
+            group, _ = Group.objects.get_or_create(name="teacher")
+            user.groups.add(group)
+
+            # Optionally send email (integrate email backend here)
 
 
 class ClassLevel(models.Model):
@@ -151,8 +125,6 @@ class GradeLevel(models.Model):
 
 
 class ClassYear(models.Model):
-    """Class year such as class of 2019"""
-
     year = models.CharField(max_length=100, unique=True, help_text="Example 2020")
     full_name = models.CharField(
         max_length=255, help_text="Example Class of 2020", blank=True
@@ -161,12 +133,10 @@ class ClassYear(models.Model):
     def __str__(self):
         return self.full_name
 
-    def save(
-        self, force_insert=False, force_update=False, using=None, update_fields=None
-    ):
+    def save(self, *args, **kwargs):
         if not self.full_name:
-            self.full_name = "Class of %s" % (self.year,)
-        super(ClassYear, self).save()
+            self.full_name = f"Class of {self.year}"
+        super().save(*args, **kwargs)
 
 
 class ReasonLeft(models.Model):
@@ -192,62 +162,38 @@ class ClassRoom(models.Model):
     )
     class_teacher = models.ForeignKey(Teacher, on_delete=models.CASCADE, blank=True)
     grade_level = models.ForeignKey(
-        GradeLevel,
-        blank=True,
-        null=True,
-        on_delete=models.SET_NULL,
-        help_text="the grade level of the class ie: 'form one is in Grade one' ",
+        GradeLevel, blank=True, null=True, on_delete=models.SET_NULL
     )
-    capacity = models.IntegerField(
-        help_text="Enter total number of sits default is set to 25",
-        default=40,
-        blank=True,
-    )
-    occupied_sits = models.IntegerField(blank=True, null=True, default=0)
+    capacity = models.PositiveIntegerField(default=40, blank=True)
+    occupied_sits = models.PositiveIntegerField(default=0, blank=True)
 
     class Meta:
-        unique_together = ["name", "stream"]
+        constraints = [
+            models.UniqueConstraint(fields=["name", "stream"], name="unique_classroom")
+        ]
 
     def __str__(self):
-        if self.stream:
-            return "{} {}".format(self.name, str(self.stream))
-        else:
-            return self.name
+        return f"{self.name} {self.stream}" if self.stream else str(self.name)
 
+    @property
     def available_sits(self):
-        open_sits = self.capacity - self.occupied_sits
-        return open_sits
+        return self.capacity - self.occupied_sits
 
+    @property
     def class_status(self):
-        # get the percentage of occupied sits
         percentage = (self.occupied_sits / self.capacity) * 100
-        return "{}%".format(float(percentage))
+        return f"{percentage:.2f}%"
 
-    def save(
-        self, force_insert=False, force_update=False, using=None, update_fields=None
-    ):
-        """
-        Before we Save any data in the class room lets check to see if there are open sits
+    def clean(self):
+        if self.occupied_sits > self.capacity:
+            raise ValidationError("Occupied sits cannot exceed the capacity.")
 
-        :param force_insert:
-        :param force_update:
-        :param using:
-        :param update_fields:
-        :return:
-        """
-        if (self.capacity - self.occupied_sits) < 0:
-            raise ValueError(
-                "all sits in this classroom are occupied try other classes"
-            )
-        else:
-            super(ClassRoom, self).save()
+    def save(self, *args, **kwargs):
+        self.clean()
+        super().save(*args, **kwargs)
 
 
 class SubjectAllocation(models.Model):
-    """
-    A model to allocate subjects to respective teacher t the school
-    """
-
     teacher_name = models.ForeignKey(Teacher, on_delete=models.CASCADE)
     subject = models.ForeignKey(
         Subject, on_delete=models.CASCADE, related_name="allocated_subjects"
@@ -259,11 +205,10 @@ class SubjectAllocation(models.Model):
     )
 
     def __str__(self):
-        return str(self.teacher_name)
+        return f"{self.teacher_name} - {self.subject} ({self.academic_year})"
 
     def subjects_data(self):
-        for data in self.subjects.all():
-            return data
+        return list(self.subjects.all())
 
 
 class Parent(models.Model):
@@ -279,56 +224,52 @@ class Parent(models.Model):
     gender = models.CharField(
         max_length=10, choices=GENDER_CHOICE, blank=True, null=True
     )
-    email = models.EmailField(blank=True, null=True)
+    email = models.EmailField(blank=True, null=True, unique=True)
     date_of_birth = models.DateField(blank=True, null=True)
     parent_type = models.CharField(
         choices=PARENT_CHOICE, max_length=10, blank=True, null=True
     )
     address = models.CharField(max_length=255, blank=True, null=True)
     phone_number = models.CharField(
-        max_length=150, unique=True, help_text="personal phone number"
+        max_length=150, unique=True, help_text="Personal phone number"
     )
     national_id = models.CharField(max_length=100, blank=True, null=True)
     occupation = models.CharField(
-        max_length=255, blank=True, null=True, help_text="current occupation"
+        max_length=255, blank=True, null=True, help_text="Current occupation"
     )
     monthly_income = models.FloatField(
-        help_text="parents average monthly income", blank=True, null=True
+        help_text="Parent's average monthly income", blank=True, null=True
     )
     single_parent = models.BooleanField(
-        default=False, blank=True, help_text="is he/she a single parent"
+        default=False, blank=True, help_text="Is he/she a single parent"
     )
-    alt_email = models.EmailField(blank=True, null=True, help_text="personal Email ")
+    alt_email = models.EmailField(blank=True, null=True, help_text="Personal email")
     date = models.DateTimeField(auto_now_add=True)
     image = models.ImageField(upload_to="Parent_images", blank=True)
     inactive = models.BooleanField(default=False)
 
     def __str__(self):
-        return self.email
+        return f"{self.first_name} {self.last_name} ({self.email})"
 
-    def save(
-        self, force_insert=False, force_update=False, using=None, update_fields=None
-    ):
-        super(Parent, self).save()
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
 
-        # create a user and password
+        # Create a user account for the parent if not exists
         user, created = CustomUser.objects.get_or_create(
             email=self.email,
-            first_name=self.first_name,
-            last_name=self.last_name,
-            is_parent=True,
+            defaults={
+                "first_name": self.first_name,
+                "last_name": self.last_name,
+                "is_parent": True,
+            },
         )
         if created:
-            password = str(self.first_name) + str(self.last_name)
-            user.set_password(password)
+            user.set_password(f"{self.first_name}{self.last_name}".lower())
             user.save()
 
-        # lets create a student group or add to an existing one
-        group, gcreated = Group.objects.get_or_create(name="parent")
-        if gcreated:
-            group.save()
+        # Assign to "parent" group
+        group, _ = Group.objects.get_or_create(name="parent")
         user.groups.add(group)
-        user.save()
 
 
 class Student(models.Model):
@@ -360,16 +301,15 @@ class Student(models.Model):
     street = models.CharField(max_length=255, blank=True)
     blood_group = models.CharField(max_length=10, blank=True, null=True)
     parent_guardian = models.ForeignKey(
-        Parent, on_delete=models.CASCADE, blank=True, null=True, related_name="child"
+        Parent, on_delete=models.CASCADE, blank=True, null=True, related_name="children"
     )
     parent_contact = models.CharField(max_length=15, blank=True, null=True)
     date_of_birth = models.DateField(blank=True)
     admission_date = models.DateTimeField(auto_now_add=True)
     admission_number = models.CharField(max_length=50, blank=True, unique=True)
     prem_number = models.CharField(max_length=50, blank=True)
-    siblings = models.ManyToManyField("Student", blank=True)
+    siblings = models.ManyToManyField("self", blank=True)
     image = models.ImageField(upload_to="StudentsImages", blank=True)
-
     cache_gpa = models.DecimalField(
         editable=False, max_digits=5, decimal_places=2, blank=True, null=True
     )
@@ -377,98 +317,35 @@ class Student(models.Model):
     def __str__(self):
         return f"{self.first_name} {self.last_name}"
 
-    def get_year(self, active_year):
-        """get the year (fresh, etc) from the class of XX year"""
-
-        if self.class_of_year:
-            try:
-                this_year = active_year.end_date.year
-                school_last_year = GradeLevel.objects.oder_by("-id")[0].id
-                class_of_year = self.class_of_year.unique_for_year
-
-                target_year = school_last_year - (class_of_year - this_year)
-                return GradeLevel.objects.get(id=target_year)
-            except:
-                return None
-
-    def determine_year(self):
-        """Set the year (fresh, etc) from class XX year"""
-
-        if self.class_of_year:
-            try:
-                active_year = AcademicYear.objects.filter(active_year=True)[0]
-                self.year = self.get_year(active_year)
-            except:
-                return None
-
-    def save(
-        self, force_insert=False, force_update=False, using=None, update_fields=None
-    ):
-        # create prent from student data
-        parent, created = Parent.objects.get_or_create(
-            phone_number=self.parent_contact,
-            email="mzaziwa" + str(self.first_name) + str(self.last_name) + "@hic.com",
-            first_name=self.middle_name,
-            last_name=self.last_name,
-        )
-        if created:
-            parent.save()
-
-        self.parent_guardian = parent
-        super(Student, self).save()
-
-    """
-	def save(self, force_insert=False, force_update=False, using=None, update_fields=None):
-
-		# 1. Check if there is a staff with the same id as student
-		if Teacher.objects.filter(id=self.id).count():
-			raise ValidationError('Cannot have someone be a student and a Staff')
-
-		#self.admission_number = assign_admission_numbers()
-		self.determine_year()
-
-		super(Student, self).save()
-		user, created = User.objects.get_or_create(username=self.username)
-		if created:
-			# if a user is created give the user a default password
-			user.password = (str(self.first_name) + str(self.middle_name))
-			user.save()
-
-		# lets create a student group or add to an existing one
-		group, gcreated = Group.objects.get_or_create(name="students")
-		if gcreated:
-			group.save()
-		user.groups.add(group)
-		user.save() 
-		
+    @property
+    def full_name(self):
+        return f"{self.first_name} {self.middle_name or ''} {self.last_name}".strip()
 
     def clean(self):
-        
-        # Check if a Faculty exists, cant have someone be a student and faculty
-        if Teacher.objects.filter(id=self.id).count():
-            raise ValidationError("Cannot have someone be a student AND faculty!")
-        super(Student, self).clean()
-    """
+        # Prevent students from being teachers
+        if Teacher.objects.filter(id=self.id).exists():
+            raise ValidationError("A person cannot be both a student and a teacher.")
+        super().clean()
 
-    def graduate_and_create_alumni(self):
-        self.inactive = True
-
-        self.reason_left = ReasonLeft.objects.get_or_create(reason="Graduated")[0]
-        if not self.graduation_date:
-            self.graduation_date = date.today()
-
-        # register student as Alumni
-        # noinspection PyUnresolvedReferences
-        # from alumni.models import Alumni
-        # Alumni.objects.get_or_create(student=self)
-        self.save()
+    def save(self, *args, **kwargs):
+        # Create parent if not exists
+        if self.parent_contact:
+            parent, _ = Parent.objects.get_or_create(
+                phone_number=self.parent_contact,
+                defaults={
+                    "first_name": self.middle_name,
+                    "last_name": self.last_name,
+                    "email": f"parent_{self.first_name}_{self.last_name}@example.com",
+                },
+            )
+            self.parent_guardian = parent
+        super().save(*args, **kwargs)
 
 
 class StudentClass(models.Model):
     """
-    This is a bridge table to link a student to a class
-    when you add a student to a class we update the selected class capacity
-
+    This is a bridge table to link a student to a class.
+    When you add a student to a class, we update the selected class capacity.
     """
 
     classroom = models.ForeignKey(
@@ -481,52 +358,60 @@ class StudentClass(models.Model):
 
     @property
     def is_current_class(self):
-        if self.academic_year.is_current_session:
-            return True
-        return False
+        # Check if the class belongs to the current academic session
+        return self.academic_year.is_current_session
 
     def __str__(self):
         return str(self.student_id)
 
     def update_class_table(self):
         selected_class = ClassRoom.objects.get(pk=self.classroom.pk)
-        new_value = selected_class.occupied_sits + 1
-        selected_class.occupied_sits = new_value
+        # Using F() expression for atomic update of occupied_sits
+        selected_class.occupied_sits = F("occupied_sits") + 1
         selected_class.save()
 
-    def save(
-        self, force_insert=False, force_update=False, using=None, update_fields=None
-    ):
-        # lets update the class sits
-
+    def save(self, *args, **kwargs):
+        # Update class sits before saving the StudentClass
         self.update_class_table()
-        super(StudentClass, self).save()
+        super().save(*args, **kwargs)
 
 
 class StudentsMedicalHistory(models.Model):
     student = models.ForeignKey(Student, on_delete=models.CASCADE)
-    history = models.TextField()
+    history = models.TextField(blank=True, null=True)
     file = models.FileField(upload_to="students_medical_files", blank=True, null=True)
 
     def __str__(self):
-        return str(self.student)
+        return f"Medical History for {self.student}"
+
+    def clean(self):
+        # You can add validation if a file is uploaded and ensure it meets the constraints
+        if not self.history and not self.file:
+            raise ValidationError(
+                "At least one of 'history' or 'file' must be provided."
+            )
 
 
 class StudentsPreviousAcademicHistory(models.Model):
-    students_name = models.ForeignKey(Student, on_delete=models.CASCADE)
+    student = models.ForeignKey(Student, on_delete=models.CASCADE)
     former_school = models.CharField(max_length=255, help_text="Former school name")
     last_gpa = models.FloatField()
     notes = models.CharField(
         max_length=255,
         blank=True,
-        help_text="Indicate students academic performance according to your observation",
+        help_text="Indicate student's academic performance according to your observation",
     )
     academic_record = models.FileField(
         upload_to="students_former_academic_files", blank=True
     )
 
     def __str__(self):
-        return str(self.students_name)
+        return f"Previous Academic History for {self.student}"
+
+    def clean(self):
+        # You can add validation for the file field if needed
+        if not self.former_school:
+            raise ValidationError("Former school name is required.")
 
 
 class GradeScale(models.Model):
@@ -536,7 +421,7 @@ class GradeScale(models.Model):
     name = models.CharField(max_length=255, unique=True)
 
     def __str__(self):
-        return "{}".format(self.name)
+        return self.name
 
     def get_rule(self, grade):
         if grade is not None:
@@ -548,11 +433,13 @@ class GradeScale(models.Model):
         rule = self.get_rule(grade)
         if rule:
             return rule.letter_grade
+        return None  # Return None if no rule found
 
     def to_numeric(self, grade):
         rule = self.get_rule(grade)
         if rule:
             return rule.numeric_scale
+        return None  # Return None if no rule found
 
 
 class GradeScaleRule(models.Model):
@@ -570,9 +457,22 @@ class GradeScaleRule(models.Model):
     def __str__(self):
         return f"{self.min_grade}-{self.max_grade} {self.letter_grade} {self.numeric_scale}"
 
+    def clean(self):
+        """Ensure consistency between letter grade and numeric scale."""
+        if not self.letter_grade and not self.numeric_scale:
+            raise ValidationError(
+                "Either a letter grade or numeric scale must be provided."
+            )
+        if self.letter_grade and self.numeric_scale is None:
+            raise ValidationError(
+                "If a letter grade is provided, numeric scale must also be provided."
+            )
+        if self.numeric_scale and self.letter_grade is None:
+            raise ValidationError(
+                "If a numeric scale is provided, a letter grade must also be provided."
+            )
 
-# def get_default_benchmark_grade():
-#    return str(Configuration.get_or_default("Benchmark-based grading", "False").value).lower() == "true"
+
 class Result(models.Model):
     student = models.ForeignKey(Student, on_delete=models.CASCADE)
     gpa = models.FloatField(null=True)
@@ -582,6 +482,13 @@ class Result(models.Model):
 
     def __str__(self):
         return str(self.student)
+
+    def clean(self):
+        """Validate that GPA is within a valid range (0.0 - 4.0)."""
+        if self.gpa is not None and (self.gpa < 0.0 or self.gpa > 4.0):
+            raise ValidationError("GPA must be between 0.0 and 4.0.")
+        if self.cat_gpa is not None and (self.cat_gpa < 0.0 or self.cat_gpa > 4.0):
+            raise ValidationError("CAT GPA must be between 0.0 and 4.0.")
 
 
 class Dormitory(models.Model):
@@ -596,22 +503,21 @@ class Dormitory(models.Model):
     def available_beds(self):
         total = self.capacity - self.occupied_beds
         if total <= 0:
-            return "all beds in {} are occupied".format(self.name)
-
-        else:
-            return total
+            return 0  # Return 0 to indicate no available beds
+        return total
 
     def save(
         self, force_insert=False, force_update=False, using=None, update_fields=None
     ):
-        if (self.capacity - self.occupied_beds) <= 0:
+        if (
+            self.capacity is not None
+            and self.occupied_beds is not None
+            and self.capacity <= self.occupied_beds
+        ):
             raise ValueError(
-                "all beds in {} are occupied:\n please add more beds or save to another dormitory".format(
-                    self.name
-                )
+                f"All beds in {self.name} are occupied. Please add more beds or allocate to another dormitory."
             )
-        else:
-            super(Dormitory, self).save()
+        super(Dormitory, self).save()
 
 
 class DormitoryAllocation(models.Model):
@@ -623,14 +529,13 @@ class DormitoryAllocation(models.Model):
     def __str__(self):
         return str(self.student.admission_number)
 
+    @transaction.atomic
     def update_dormitory(self):
-        """
-        update the capacity of each dorm
-        :return:
-        """
-        selected_dorm = Dormitory.objects.get(pk=self.dormitory.pk)
-        new_capacity = selected_dorm.occupied_beds + 1
-        selected_dorm.occupied_beds = new_capacity
+        """Update the capacity of the selected dormitory."""
+        selected_dorm = Dormitory.objects.select_for_update().get(pk=self.dormitory.pk)
+        if selected_dorm.available_beds() <= 0:
+            raise ValidationError(f"{selected_dorm.name} has no available beds.")
+        selected_dorm.occupied_beds += 1
         selected_dorm.save()
 
     def save(
@@ -645,7 +550,6 @@ class ExaminationListHandler(models.Model):
     start_date = models.DateField()
     ends_date = models.DateField()
     out_of = models.IntegerField()
-    # academic_term = models.ForeignKey(Term, on_delete=models.CASCADE, related_name='academic_term_exam')
     classrooms = models.ManyToManyField(ClassRoom, related_name="class_exams")
     comments = models.CharField(
         max_length=200, blank=True, null=True, help_text="Comments Regarding Exam"
@@ -655,19 +559,21 @@ class ExaminationListHandler(models.Model):
 
     @property
     def status(self):
-        if datetime.now().date() > self.start_date:
+        today = datetime.now().date()
+        if today > self.ends_date:
             return "Done"
-        elif self.start_date >= datetime.now().date() >= self.ends_date:
-            return "on going"
-        return "Coming up"
+        elif self.start_date <= today <= self.ends_date:
+            return "Ongoing"
+        return "Coming Up"
 
     def __str__(self):
         return self.name
 
-    def save(
-        self, force_insert=False, force_update=False, using=None, update_fields=None
-    ):
-        super(ExaminationListHandler, self).save()
+    def clean(self):
+        """Ensure the start date is not later than the end date."""
+        if self.start_date > self.ends_date:
+            raise ValidationError("Start date cannot be later than end date.")
+        super(ExaminationListHandler, self).clean()
 
 
 class MarksManagement(models.Model):
@@ -687,43 +593,34 @@ class MarksManagement(models.Model):
     date_time = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
-        return self.points_scored
+        return f"{self.exam_name} - {self.student.student} - {self.points_scored}"
 
-
-'''
-class TranscriptNoteChoice(models.Model):
-	"""
-	Returns a predefined transcript note.
-	when displayed from 'TranscriptNote':
-	replaces $student with student name
-	Replaces $he_she with students appropriate gender word
-	"""
-
-	note = models.TextField()
-
-	def __str__(self):
-		return self.note
-
-class TranscriptNote(models.Model):
-	""" These are notes intended to be shown on a transcript. They may be either free
-		text or a predefined choice. If both are entered they will be concatenated.
-		"""
-
-	note = models.TextField(blank=True)
-	predefined_note = models.ForeignKey(TranscriptNoteChoice, blank=True, null=True, on_delete=models.SET_NULL)
-	student = models.ForeignKey(Student, on_delete=models.CASCADE)
-
-	def __str__(self):
-		return str(self.student)
-'''
+    def clean(self):
+        """Validate points scored based on the exam's out_of value."""
+        if self.points_scored < 0 or self.points_scored > self.exam_name.out_of:
+            raise ValidationError(
+                f"Points scored must be between 0 and {self.exam_name.out_of}."
+            )
+        super(MarksManagement, self).clean()
 
 
 class StudentFile(models.Model):
-    file = models.FileField(upload_to="student_files")
+    file = models.FileField(
+        upload_to="students_files/%(student_id)s/",
+        validators=[
+            FileExtensionValidator(allowed_extensions=["pdf", "jpg", "png", "docx"])
+        ],
+    )
     student = models.ForeignKey(Student, on_delete=models.CASCADE)
 
     def __str__(self):
         return str(self.student)
+
+    def clean(self):
+        """Override to validate file size or type if necessary."""
+        if self.file.size > 10 * 1024 * 1024:  # Limit to 10MB files
+            raise ValidationError("File size must be under 10MB.")
+        super().clean()
 
 
 class StudentHealthRecord(models.Model):
@@ -733,52 +630,68 @@ class StudentHealthRecord(models.Model):
     def __str__(self):
         return str(self.student)
 
+    def clean(self):
+        """Ensure that the record contains appropriate information."""
+        if len(self.record) < 10:  # Ensure some minimal content in the record
+            raise ValidationError("Health record must contain more information.")
+        super().clean()
+
 
 class MessageToParent(models.Model):
-    """Store a message to be shown to parents for a specific amount of time"""
+    """Store a message to be shown to parents for a specific amount of time."""
 
-    message = models.TextField(
-        help_text="this message will be shown to Parents when they log in"
-    )
-    start_date = models.DateField(
-        default=timezone.now,
-        help_text="If blank the message will be posted starting today",
-    )
-    end_date = models.DateField(
-        default=timezone.now, help_text="if blank the message will end today"
-    )
+    message = models.TextField(help_text="Message to be shown to Parents.")
+    start_date = models.DateField(default=timezone.now)
+    end_date = models.DateField(default=timezone.now)
 
     def __str__(self):
         return self.message
+
+    def clean(self):
+        """Ensure that end date is not before start date."""
+        if self.end_date < self.start_date:
+            raise ValidationError("End date cannot be before the start date.")
+        super().clean()
+
+    @property
+    def is_active(self):
+        """Check if the message is currently active."""
+        today = timezone.now().date()
+        return self.start_date <= today <= self.end_date
 
 
 class MessageToTeacher(models.Model):
-    """Stores a message to be shown to Teachers for a specific amount of time"""
+    """Stores a message to be shown to Teachers for a specific amount of time."""
 
-    message = models.TextField(
-        help_text="This message will be shown to teachers when they log in."
-    )
-    start_date = models.DateField(
-        default=timezone.now,
-        help_text="If blank the message will be posted starting today",
-    )
-    end_date = models.DateField(
-        default=timezone.now, help_text="if blank the message will end today"
-    )
+    message = models.TextField(help_text="Message to be shown to Teachers.")
+    start_date = models.DateField(default=timezone.now)
+    end_date = models.DateField(default=timezone.now)
 
     def __str__(self):
         return self.message
 
+    def clean(self):
+        """Ensure that end date is not before start date."""
+        if self.end_date < self.start_date:
+            raise ValidationError("End date cannot be before the start date.")
+        super().clean()
+
+    @property
+    def is_active(self):
+        """Check if the message is currently active."""
+        today = timezone.now().date()
+        return self.start_date <= today <= self.end_date
+
 
 class FamilyAccessUser(CustomUser):
-    """A person who can log into the non-admin side and see the same view as a student,
-    except that he/she cannot submit timecards.
-    This proxy model allows non-superuser registrars to update family user accounts.
-    """
+    """A person who can log into the non-admin side and see the same view as a student."""
 
     class Meta:
         proxy = True
 
     def save(self, *args, **kwargs):
-        super(FamilyAccessUser, self).save()
-        self.groups.add(Group.objects.get_or_create(name="family")[0])
+        """Override save to assign user to 'family' group."""
+        super(FamilyAccessUser, self).save(*args, **kwargs)
+        group, created = Group.objects.get_or_create(name="family")
+        if not self.groups.filter(name="family").exists():
+            self.groups.add(group)

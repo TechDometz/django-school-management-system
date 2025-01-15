@@ -1,12 +1,18 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 
-from users.views import MyTokenObtainPairView, UserViewSet, AccountantViewSet
+from users.views import (
+    MyTokenObtainPairView,
+    UserViewSet,
+    AccountantViewSet,
+    TeacherViewSet,
+)
 
 # Initialize the router
 router = DefaultRouter()
 router.register(r"users", UserViewSet, basename="user")
 router.register(r"accountants", AccountantViewSet, basename="accountant")
+router.register(r"teachers", TeacherViewSet, basename="teacher")
 
 urlpatterns = [
     # JWT Token endpoint
