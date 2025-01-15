@@ -30,37 +30,55 @@ class CarouselImage(models.Model):
 
 
 class AccessLog(models.Model):
-    login = models.ForeignKey(CustomUser, null=True, on_delete=models.SET_NULL)
+    login = models.ForeignKey("CustomUser", null=True, on_delete=models.SET_NULL)
     ua = models.CharField(
         max_length=2000,
         help_text="User agent. We can use this to determine operating system and browser in use.",
     )
-    date = models.DateTimeField(auto_now=True)
+    date = models.DateTimeField(
+        auto_now_add=True
+    )  # Set this to add the timestamp on creation only
     ip = models.GenericIPAddressField()
     usage = models.CharField(max_length=255)
 
     def __str__(self):
-        return str(self.login) + " " + str(self.usage) + " " + str(self.date)
+        return f"{self.login} - {self.usage} on {self.date}"
 
     def os(self):
+        """
+        Extract the operating system from the user agent string.
+        Returns 'Unknown' if it cannot be detected.
+        """
         try:
-            return httpagentparser.simple_detect(self.ua)[0]
-            # return "what?"
-        except:
+            user_agent = parse(self.ua)
+            return user_agent.os.family
+        except Exception as e:
+            print(f"Error extracting OS from UA: {e}")
             return "Unknown"
 
     def browser(self):
+        """
+        Extract the browser from the user agent string.
+        Returns 'Unknown' if it cannot be detected.
+        """
         try:
-            return httpagentparser.simple_detect(self.ua)[1]
-            # return "what?"
-        except:
+            user_agent = parse(self.ua)
+            return user_agent.browser.family
+        except Exception as e:
+            print(f"Error extracting Browser from UA: {e}")
             return "Unknown"
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["login"]),  # Add index for faster querying by login
+            models.Index(fields=["date"]),  # Add index for faster querying by date
+        ]
 
 
 class School(models.Model):
     active = models.BooleanField(
         default=False,
-        help_text="DANGER..!!!! If marked this will be the default School Information System Wide...",
+        help_text="DANGER..!!!! If marked, this will be the default School Information System Wide...",
     )
     name = models.CharField(max_length=100)
     address = models.CharField(max_length=250)
@@ -82,21 +100,30 @@ class School(models.Model):
     def __str__(self):
         return self.name
 
+    class Meta:
+        indexes = [
+            models.Index(fields=["name"]),  # Index for quick searching by name
+            models.Index(fields=["active"]),  # Index for filtering by active status
+        ]
+        ordering = ["name"]  # Default ordering by school name
+
 
 class Day(models.Model):
-    dayOfWeek = (
-        ("1", "Monday"),
-        ("2", "Tuesday"),
-        ("3", "Wednesday"),
-        ("4", "Thursday"),
-        ("5", "Friday"),
-        ("6", "Saturday"),
-        ("7", "Sunday"),
+    DAY_CHOICES = (
+        (1, "Monday"),
+        (2, "Tuesday"),
+        (3, "Wednesday"),
+        (4, "Thursday"),
+        (5, "Friday"),
+        (6, "Saturday"),
+        (7, "Sunday"),
     )
-    day = models.CharField(max_length=1, choices=dayOfWeek, unique=True)
+    day = models.IntegerField(choices=DAY_CHOICES, unique=True)
 
     def __str__(self):
-        return self.day
+        return (
+            self.get_day_display()
+        )  # Using get_day_display() to retrieve the display value for the day
 
     class Meta:
         ordering = ("day",)
@@ -104,19 +131,19 @@ class Day(models.Model):
 
 class AcademicYear(models.Model):
     """
-    a db table row that maps on every academic year
+    A database table row that maps to every academic year.
     """
 
     name = models.CharField(max_length=255, unique=True)
     start_date = models.DateField()
-    end_date = models.DateField(blank=True)
+    end_date = models.DateField(blank=True, null=True)
     graduation_date = models.DateField(
         blank=True, null=True, help_text="The date when students graduate"
     )
-    # week_days = models.ManyToManyField(Day)
     active_year = models.BooleanField(
-        help_text="DANGER!! This is the current school year. There can only be one and setting this will remove it from other years. "
-        "If you want to change the active year you almost certainly want to click Admin, Change School Year."
+        help_text="DANGER!! This is the current school year. "
+        "There can only be one and setting this will remove it from other years. "
+        "If you want to change the active year, click Admin, Change School Year."
     )
 
     class Meta:
@@ -126,19 +153,25 @@ class AcademicYear(models.Model):
         return self.name
 
     @property
-    def status(self, now_=date.today()):
+    def status(self):
+        now_ = date.today()
         if self.active_year:
             return "active"
-        elif self.start_date <= now_ >= self.end_date:
-            return "ended"
-
-        elif self.start_date > now_ < self.end_date:
+        elif self.start_date <= now_ <= self.end_date:
             return "pending"
+        elif self.start_date > now_ > self.end_date:
+            return "ended"
+        return "unknown"  # Fallback in case status doesn't match any condition
 
-    def save(
-        self, force_insert=False, force_update=False, using=None, update_fields=None
-    ):
-        super(AcademicYear, self).save()
+    def save(self, *args, **kwargs):
+        # Ensure only one active year at a time
         if self.active_year:
-            # if it is marked as the current year the update all the tables row i the database with false
-            AcademicYear.objects.exclude(pk=self.pk).update(active_year="False")
+            AcademicYear.objects.exclude(pk=self.pk).update(active_year=False)
+        super(AcademicYear, self).save(*args, **kwargs)
+
+    def clean(self):
+        """
+        Add custom validation to ensure the end_date is after start_date if both are provided.
+        """
+        if self.end_date and self.start_date > self.end_date:
+            raise ValidationError("End date must be after start date.")

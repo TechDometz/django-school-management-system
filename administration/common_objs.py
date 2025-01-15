@@ -20,10 +20,10 @@ COMMENT = (
 )
 
 ACADEMIC_TERM = (
-    ("ONE", "One"),
-    ("TWO", "Two"),
-    ("THREE", "Three"),
-    ("FOUR", "Four"),
+    ("One", "One"),
+    ("Two", "Two"),
+    ("Three", "Three"),
+    ("Four", "Four"),
 )
 
 GENDER_CHOICE = (("Male", "Male"), ("Female", "Female"), ("Other", "Other"))

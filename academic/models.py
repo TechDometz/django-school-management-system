@@ -9,6 +9,7 @@ from django.utils import timezone
 from users.models import CustomUser
 from administration.models import AcademicYear
 from .validators import *
+from administration.common_objs import *
 
 
 class Department(models.Model):
