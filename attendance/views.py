@@ -2,6 +2,8 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.exceptions import NotFound
+from rest_framework.pagination import PageNumberPagination
+from rest_framework.filters import SearchFilter
 from .models import TeachersAttendance, StudentAttendance, PeriodAttendance
 from .serializers import (
     TeacherAttendanceSerializer,
@@ -11,6 +13,13 @@ from .serializers import (
 
 
 class TeacherAttendanceListView(APIView):
+
+    queryset = TeachersAttendance.objects.all()
+    serializer_class = TeacherAttendanceSerializer
+    pagination_class = PageNumberPagination
+    filter_backends = (SearchFilter,)
+    search_fields = ["teacher__fname", "date"]
+
     def get(self, request):
         attendances = TeachersAttendance.objects.all()
         serializer = TeacherAttendanceSerializer(attendances, many=True)
