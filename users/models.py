@@ -1,12 +1,14 @@
 from django.db import models
+from django.db.models.signals import post_save
+from django.dispatch import receiver
 from django.contrib.auth.models import AbstractBaseUser
 from django.contrib.auth.models import PermissionsMixin
 from django.contrib.auth.models import Group
 from django.utils.translation import gettext_lazy as _
 from django.utils import timezone
 
-from .managers import CustomUserManager
 from administration.common_objs import *
+from .managers import CustomUserManager
 
 
 class CustomUser(AbstractBaseUser, PermissionsMixin):
@@ -37,16 +39,12 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
 
 
 class Accountant(models.Model):
-    username = models.CharField(unique=True, max_length=250, blank=True)
-    first_name = models.CharField(max_length=300, verbose_name="First Name", blank=True)
-    middle_name = models.CharField(max_length=100, blank=True)
-    last_name = models.CharField(max_length=300, verbose_name="Last Name", blank=True)
-    gender = models.CharField(max_length=10, choices=GENDER_CHOICE, blank=True)
-    email = models.EmailField(blank=True, null=True)
+    user = models.OneToOneField(
+        CustomUser, on_delete=models.CASCADE, related_name="accountant_profile"
+    )
     empId = models.CharField(max_length=8, null=True, blank=True, unique=True)
     tin_number = models.CharField(max_length=9, null=True, blank=True)
     nssf_number = models.CharField(max_length=9, null=True, blank=True)
-    isAccountant = models.BooleanField(default=True)
     salary = models.IntegerField(blank=True, null=True)
     national_id = models.CharField(max_length=100, blank=True, null=True)
     address = models.CharField(max_length=255, blank=True)
@@ -61,53 +59,22 @@ class Accountant(models.Model):
     inactive = models.BooleanField(default=False)
 
     class Meta:
-        ordering = ("first_name", "last_name")
+        ordering = ("user__first_name", "user__last_name")
 
     def __str__(self):
-        return "{} {}".format(self.first_name, self.last_name)
+        return f"{self.user.first_name} {self.user.last_name}"
 
-    @property
-    def deleted(self):
-        # for backward compatibility
-        return self.inactive
 
-    def save(
-        self, force_insert=False, force_update=False, using=None, update_fields=None
-    ):
-        #  check if the person is already a student
-        # if Student.objects.filter(id=self.id).count():
-        #    raise ValidationError("cannot have a someone be a student and a Teacher")
-
-        # save model
-        super(Accountant, self).save()
-
-        # create a user with default password as firstname and lastname
-        user, created = CustomUser.objects.get_or_create(
-            email=self.email,
-            first_name=self.first_name,
-            last_name=self.last_name,
-            is_accountant=self.isAccountant,
-        )
-        if created:
-            password = "Complex." + str(self.empId[4:])
-            user.set_password(password)
-            user.save()
-            # send the username and password to email
-            msg = (
-                "\nHey {} Welcome to {}, your username is {} and the default one time password is {}"
-                "Please login to your portal and change the password.."
-                "This password is valid for 24 hours only".format(
-                    (str(self.first_name) + str(self.last_name)),
-                    "this school ",
-                    self.email,
-                    user.password,
-                )
-            )
-            # mail_agent(self.alt_email, "Default user Name and password", msg)
-
-        # add the user to a Group
-        group, gcreated = Group.objects.get_or_create(name="accountant")
-        if gcreated:
-            group.save()
-        user.groups.add(group)
+@receiver(post_save, sender=Accountant)
+def create_accountant_user(sender, instance, created, **kwargs):
+    if created:
+        user = instance.user
+        user.is_accountant = True
+        user.set_password(CustomUser.objects.make_random_password())
         user.save()
+
+        group, _ = Group.objects.get_or_create(name="accountant")
+        user.groups.add(group)
+
+        # Send an email with credentials or a password reset link
+        # mail_agent(user.alt_email, "Welcome", "Your credentials...")

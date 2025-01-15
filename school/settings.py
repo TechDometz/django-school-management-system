@@ -1,7 +1,7 @@
-from pathlib import Path
-from datetime import timedelta
-from decouple import config
 import os
+from pathlib import Path
+from datetime import timedelta, date
+from django.core.validators import MinValueValidator  # Could use MaxValueValidator too
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -11,17 +11,15 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/3.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = config("SECRET_KEY")
+SECRET_KEY = "JVHhdwUt8899h ghhiodfidwbfew"
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
 ALLOWED_HOSTS = ["127.0.0.1", "localhost"]
 
-import datetime
-from django.core.validators import MinValueValidator  # Could use MaxValueValidator too
 
-DATE_VALIDATORS = [MinValueValidator(datetime.date(1970, 1, 1))]  # Unix epoch!
+DATE_VALIDATORS = [MinValueValidator(date(1970, 1, 1))]  # Unix epoch!
 
 
 # Application definition
@@ -91,9 +89,9 @@ DATABASES = {
         "ENGINE": "django.db.backends.postgresql",
         "NAME": "hips",
         "USER": "postgres",
-        "PASSWORD": config("POSTGRES_PASSWORD"),
+        "PASSWORD": "Siah.1921#",
         "HOST": "127.0.0.1",
-        "PORT": config("POSTGRES_PORT"),
+        "PORT": "5432",
     }
 }
 

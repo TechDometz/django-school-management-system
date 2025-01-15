@@ -1,17 +1,16 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from users.views import (
-	 MyTokenObtainPairView, UserListView, UserDetailView,
-	 AccountantListView, AccountantDetailView
-	 )
-from academic.views import TeacherListView, TeacherDetailView
+
+from users.views import MyTokenObtainPairView, UserViewSet, AccountantViewSet
+
+# Initialize the router
+router = DefaultRouter()
+router.register(r"users", UserViewSet, basename="user")
+router.register(r"accountants", AccountantViewSet, basename="accountant")
+
 urlpatterns = [
-	path('login/', MyTokenObtainPairView.as_view(), name='token_obtain_pair'),
-    path('', UserListView.as_view(), name='user-list'),
-    
-    path('accountants/', AccountantListView.as_view(), name='accountant-list'),
-    path('accountants/<str:pk>/', AccountantDetailView.as_view(), name='accountant-details'),
-    path('teachers/', TeacherListView.as_view(), name='teacher-list'),
-    path('teachers/<str:pk>/', TeacherDetailView.as_view(), name='teacher-details'),
-    path('<str:pk>/', UserDetailView.as_view(), name='user-details'),
+    # JWT Token endpoint
+    path("login/", MyTokenObtainPairView.as_view(), name="token_obtain_pair"),
+    # Include ViewSet routes
+    path("", include(router.urls)),
 ]

@@ -1,21 +1,7 @@
 {
-  "python.pythonPath": ".\\env\\Scripts\\python.exe",
-  "editor.formatOnSave": true,
-  "python.linting.pycodestyleEnabled": false,
-  "python.linting.pylintPath": "pylint",
-  "python.linting.pylintArgs": [
-    "--load-plugins",
-    "pylint_django"
-  ],
-  "python.linting.pylintEnabled": true,
-  "python.venvPath": ".\\env\\Scripts\\python.exe",
-  "python.linting.pycodestyleArgs": [
-    "--ignore=E501"
-  ],
   "files.exclude": {
     "**/*.pyc": true
   },
-  "python.linting.enabled": true,
   "[python]": {
     "editor.defaultFormatter": "ms-python.black-formatter",
     "editor.formatOnSave": true
