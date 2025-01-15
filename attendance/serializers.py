@@ -1,38 +1,55 @@
 from rest_framework import serializers
-from openpyxl import load_workbook, Workbook
-from openpyxl.utils import get_column_letter
+from .models import (
+    TeachersAttendance,
+    AttendanceStatus,
+    StudentAttendance,
+    PeriodAttendance,
+)
 
-from .models import AttendanceStatus, TeachersAttendance
-from academic.serializers import TeacherSerializer
 
 class AttendanceStatusSerializer(serializers.ModelSerializer):
-	class Meta:
-		model = AttendanceStatus
-		fields = "__all__"
 
-class TeachersAttendanceSerializer(serializers.ModelSerializer):
-	#teacher = serializers.SerializerMethodField(read_only=True)
-	#status = serializers.SerializerMethodField(read_only=True)
-	#total_days_attended = serializers.SerializerMethodField(read_only=True)
+    class Meta:
+        model = AttendanceStatus
+        fields = "__all__"
 
-	class Meta:
-		model = TeachersAttendance
-		fields = "__all__"
-'''
-	def get_total_days_attended(self, obj, days=0):
-		
-		teacher = obj.teacher
-		days = len(TeachersAttendance.objects.filter(teacher=teacher, status=1))
-		
-		return days
 
-	def get_teacher(self, obj):
-		teacher = obj.teacher
-		serializer = TeacherSerializer(teacher, many=False)
-		return serializer.data
+class TeacherAttendanceSerializer(serializers.ModelSerializer):
+    teacher = (
+        serializers.StringRelatedField()
+    )  # Display teacher's name instead of the ID
+    status = serializers.StringRelatedField()  # Display status name instead of ID
+    date = serializers.DateField(format="%Y-%m-%d")  # Date format in response
 
-	def get_status(self, obj):
-		status = obj.status
-		serializer = AttendanceStatusSerializer(status, many=False)
-		return serializer.data
-		'''
+    class Meta:
+        model = TeachersAttendance
+        fields = ["id", "teacher", "date", "time_in", "time_out", "status", "notes"]
+
+
+class StudentAttendanceSerializer(serializers.ModelSerializer):
+    student = serializers.StringRelatedField()  # Display student name instead of ID
+    status = serializers.StringRelatedField()  # Display status name instead of ID
+    ClassRoom = serializers.StringRelatedField()  # Display classroom name instead of ID
+    date = serializers.DateField(format="%Y-%m-%d")  # Date format in response
+
+    class Meta:
+        model = StudentAttendance
+        fields = ["id", "student", "date", "ClassRoom", "status", "notes"]
+
+
+class PeriodAttendanceSerializer(serializers.ModelSerializer):
+    student = serializers.StringRelatedField()  # Display student name instead of ID
+    status = serializers.StringRelatedField()  # Display status name instead of ID
+    date = serializers.DateField(format="%Y-%m-%d")  # Date format in response
+
+    class Meta:
+        model = PeriodAttendance
+        fields = [
+            "id",
+            "student",
+            "date",
+            "period",
+            "status",
+            "reason_for_absence",
+            "notes",
+        ]
