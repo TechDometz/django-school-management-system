@@ -1,5 +1,6 @@
 from django.db import models, transaction
 from django.db.models import F
+from decimal import Decimal
 from django.core.exceptions import ValidationError
 from django.core.validators import FileExtensionValidator
 from django.contrib.auth.models import Group
@@ -7,7 +8,7 @@ from django.utils.translation import gettext_lazy as _
 from django.utils.crypto import get_random_string
 from django.utils import timezone
 from users.models import CustomUser
-from administration.models import AcademicYear
+from administration.models import AcademicYear, Term
 from .validators import *
 from administration.common_objs import *
 
@@ -54,6 +55,7 @@ class Teacher(models.Model):
     short_name = models.CharField(max_length=3, blank=True, null=True, unique=True)
     isTeacher = models.BooleanField(default=True)
     salary = models.IntegerField(blank=True, null=True)
+    unpaid_salary = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     subject_specialization = models.ManyToManyField(Subject, blank=True)
     national_id = models.CharField(max_length=100, blank=True, null=True)
     address = models.CharField(max_length=255, blank=True)
@@ -101,6 +103,17 @@ class Teacher(models.Model):
             user.groups.add(group)
 
             # Optionally send email (integrate email backend here)
+
+    def update_unpaid_salary(self):
+        # Update unpaid salary at the start of each month
+        current_month = timezone.now().month
+        if self.unpaid_salary > 0:
+            self.unpaid_salary += self.salary  # Add salary amount to unpaid salary
+        else:
+            self.unpaid_salary = (
+                self.salary
+            )  # If unpaid salary is 0, set the first month's salary
+        self.save()
 
 
 class ClassLevel(models.Model):
@@ -200,7 +213,7 @@ class SubjectAllocation(models.Model):
         Subject, on_delete=models.CASCADE, related_name="allocated_subjects"
     )
     academic_year = models.ForeignKey(AcademicYear, on_delete=models.CASCADE)
-    term = models.CharField(max_length=10, choices=ACADEMIC_TERM, blank=True, null=True)
+    term = models.OneToOneField(Term, max_length=10, blank=True, null=True)
     class_room = models.ForeignKey(
         ClassRoom, on_delete=models.CASCADE, related_name="subjects"
     )
@@ -314,9 +327,10 @@ class Student(models.Model):
     cache_gpa = models.DecimalField(
         editable=False, max_digits=5, decimal_places=2, blank=True, null=True
     )
+    debt = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal("0.00"))
 
     def __str__(self):
-        return f"{self.first_name} {self.last_name}"
+        return f"{self.first_name} {self.last_name} - Debt: {self.debt}"
 
     @property
     def full_name(self):
@@ -341,6 +355,49 @@ class Student(models.Model):
             )
             self.parent_guardian = parent
         super().save(*args, **kwargs)
+
+    def update_debt(self, term_fee):
+        """
+        Add term fee to the student's debt.
+        """
+        self.debt += Decimal(term_fee)
+        self.save()
+
+    def clear_debt(self, amount_paid):
+        """
+        Reduce the student's debt by the amount paid.
+        """
+        self.debt -= Decimal(amount_paid)
+        self.debt = max(self.debt, Decimal("0.00"))  # Prevent negative debt
+        self.save()
+
+    def update_debt_for_term(self, term):
+        """
+        Update student debt at the start of a new term.
+        If moving to a new academic year, carry forward unpaid debt.
+        """
+        if term.start_date <= timezone.now():
+            self.debt += term.default_term_fee  # Add the term fee to existing debt
+            self.save()
+
+    def carry_forward_debt_to_new_academic_year(self):
+        """
+        Carry forward debt to the first term of the new academic year.
+        """
+
+        current_academic_year = AcademicYear.objects.get(current=True)
+        next_year = AcademicYear.objects.filter(
+            start_date__gt=current_academic_year.end_date
+        ).first()
+
+        if next_year:
+            first_term_of_new_year = (
+                Term.objects.filter(academic_year=next_year)
+                .order_by("start_date")
+                .first()
+            )
+            if first_term_of_new_year:
+                self.update_debt_for_term(first_term_of_new_year)
 
 
 class StudentClass(models.Model):
@@ -479,7 +536,7 @@ class Result(models.Model):
     gpa = models.FloatField(null=True)
     cat_gpa = models.FloatField(null=True)
     academic_year = models.ForeignKey(AcademicYear, on_delete=models.CASCADE)
-    term = models.CharField(max_length=10, choices=ACADEMIC_TERM, blank=True, null=True)
+    term = models.OneToOneField(Term, max_length=10, blank=True, null=True)
 
     def __str__(self):
         return str(self.student)

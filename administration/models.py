@@ -175,3 +175,18 @@ class AcademicYear(models.Model):
         """
         if self.end_date and self.start_date > self.end_date:
             raise ValidationError("End date must be after start date.")
+
+
+class Term(models.Model):
+    name = models.CharField(max_length=50)  # e.g., "Term 1", "Term 2"
+    academic_year = models.ForeignKey(
+        AcademicYear, on_delete=models.CASCADE, related_name="terms"
+    )
+    default_term_fee = models.DecimalField(
+        max_digits=10, decimal_places=2, default=0.00
+    )
+    start_date = models.DateField()
+    end_date = models.DateField()
+
+    def __str__(self):
+        return f"{self.name} - {self.academic_year.name}"
