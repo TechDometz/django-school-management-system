@@ -1,7 +1,7 @@
 from django.db import models
-import httpagentparser
 from django.conf import settings
 from datetime import date, datetime
+from user_agents import parse
 
 from .common_objs import *
 from users.models import CustomUser
@@ -30,7 +30,7 @@ class CarouselImage(models.Model):
 
 
 class AccessLog(models.Model):
-    login = models.ForeignKey("CustomUser", null=True, on_delete=models.SET_NULL)
+    login = models.ForeignKey(CustomUser, null=True, on_delete=models.SET_NULL)
     ua = models.CharField(
         max_length=2000,
         help_text="User agent. We can use this to determine operating system and browser in use.",

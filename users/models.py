@@ -58,12 +58,12 @@ class Accountant(models.Model):
         help_text="Personal Email apart from the one given by the school",
     )
     date_of_birth = models.DateField(blank=True, null=True)
-    image = models.ImageField(upload_to="employee_images", blank=True, null=True)
+    image = models.ImageField(upload_to="Employee_images", blank=True, null=True)
     isAccountant = models.BooleanField(default=True)
     inactive = models.BooleanField(default=False)
 
     class Meta:
-        ordering = ("user__first_name", "user__last_name")
+        ordering = ("first_name", "last_name")
 
     def __str__(self):
         return f"{self.first_name} {self.last_name}"

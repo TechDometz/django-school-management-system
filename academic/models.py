@@ -63,9 +63,7 @@ class Teacher(models.Model):
     alt_email = models.EmailField(blank=True, null=True)
     date_of_birth = models.DateField(blank=True, null=True)
     designation = models.CharField(max_length=255, blank=True, null=True)
-    image = models.ImageField(
-        upload_to="teachers/{}/images".format(empId), blank=True, null=True
-    )
+    image = models.ImageField(upload_to="Employee_images", blank=True, null=True)
     inactive = models.BooleanField(default=False)
 
     class Meta:
@@ -213,7 +211,7 @@ class SubjectAllocation(models.Model):
         Subject, on_delete=models.CASCADE, related_name="allocated_subjects"
     )
     academic_year = models.ForeignKey(AcademicYear, on_delete=models.CASCADE)
-    term = models.OneToOneField(Term, max_length=10, blank=True, null=True)
+    term = models.OneToOneField(Term, on_delete=models.SET_NULL, blank=True, null=True)
     class_room = models.ForeignKey(
         ClassRoom, on_delete=models.CASCADE, related_name="subjects"
     )
@@ -323,7 +321,7 @@ class Student(models.Model):
     admission_number = models.CharField(max_length=50, blank=True, unique=True)
     prem_number = models.CharField(max_length=50, blank=True)
     siblings = models.ManyToManyField("self", blank=True)
-    image = models.ImageField(upload_to="StudentsImages", blank=True)
+    image = models.ImageField(upload_to="Student_images", blank=True)
     cache_gpa = models.DecimalField(
         editable=False, max_digits=5, decimal_places=2, blank=True, null=True
     )
@@ -536,7 +534,7 @@ class Result(models.Model):
     gpa = models.FloatField(null=True)
     cat_gpa = models.FloatField(null=True)
     academic_year = models.ForeignKey(AcademicYear, on_delete=models.CASCADE)
-    term = models.OneToOneField(Term, max_length=10, blank=True, null=True)
+    term = models.OneToOneField(Term, on_delete=models.SET_NULL, blank=True, null=True)
 
     def __str__(self):
         return str(self.student)

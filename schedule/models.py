@@ -1,5 +1,4 @@
 from django.db import models
-import httpagentparser
 
 TIMETABLE_CHOICES = [
     ("1", "07:20:00 - 08:00:00"),
@@ -11,4 +10,3 @@ TIMETABLE_CHOICES = [
     ("7", "11:40:00 - 12:20:00"),
     ("8", "12:20:00 - 13:00:00"),
 ]
-
