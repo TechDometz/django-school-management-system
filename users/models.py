@@ -1,9 +1,8 @@
 from django.db import models
-from django.db.models.signals import post_save
-from django.dispatch import receiver
 from django.contrib.auth.models import AbstractBaseUser
 from django.contrib.auth.models import PermissionsMixin
 from django.contrib.auth.models import Group
+from django.utils.crypto import get_random_string
 from django.utils.translation import gettext_lazy as _
 from django.utils import timezone
 
@@ -39,13 +38,17 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
 
 
 class Accountant(models.Model):
-    user = models.OneToOneField(
-        CustomUser, on_delete=models.CASCADE, related_name="accountant_profile"
-    )
+    username = models.CharField(unique=True, max_length=250, blank=True)
+    first_name = models.CharField(max_length=300, blank=True)
+    middle_name = models.CharField(max_length=100, blank=True)
+    last_name = models.CharField(max_length=300, blank=True)
+    gender = models.CharField(max_length=10, choices=GENDER_CHOICE, blank=True)
+    email = models.EmailField(blank=True, null=True)
     empId = models.CharField(max_length=8, null=True, blank=True, unique=True)
     tin_number = models.CharField(max_length=9, null=True, blank=True)
     nssf_number = models.CharField(max_length=9, null=True, blank=True)
     salary = models.IntegerField(blank=True, null=True)
+    unpaid_salary = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     national_id = models.CharField(max_length=100, blank=True, null=True)
     address = models.CharField(max_length=255, blank=True)
     phone_number = models.CharField(max_length=150, blank=True)
@@ -56,25 +59,52 @@ class Accountant(models.Model):
     )
     date_of_birth = models.DateField(blank=True, null=True)
     image = models.ImageField(upload_to="employee_images", blank=True, null=True)
+    isAccountant = models.BooleanField(default=True)
     inactive = models.BooleanField(default=False)
 
     class Meta:
         ordering = ("user__first_name", "user__last_name")
 
     def __str__(self):
-        return f"{self.user.first_name} {self.user.last_name}"
+        return f"{self.first_name} {self.last_name}"
 
+    @property
+    def deleted(self):
+        return self.inactive
 
-@receiver(post_save, sender=Accountant)
-def create_accountant_user(sender, instance, created, **kwargs):
-    if created:
-        user = instance.user
-        user.is_accountant = True
-        user.set_password(CustomUser.objects.make_random_password())
-        user.save()
+    def save(self, *args, **kwargs):
+        # Generate unique username
+        if not self.username:
+            self.username = f"{self.first_name.lower()}{self.last_name.lower()}{get_random_string(4)}"
 
-        group, _ = Group.objects.get_or_create(name="accountant")
-        user.groups.add(group)
+        # Create corresponding user
+        super().save(*args, **kwargs)
+        user, created = CustomUser.objects.get_or_create(
+            email=self.email,
+            defaults={
+                "first_name": self.first_name,
+                "last_name": self.last_name,
+                "is_accountant": self.isAccountant,
+            },
+        )
+        if created:
+            default_password = f"Complex.{self.empId[-4:] if self.empId and len(self.empId) >= 4 else '0000'}"
+            user.set_password(default_password)
+            user.save()
 
-        # Send an email with credentials or a password reset link
-        # mail_agent(user.alt_email, "Welcome", "Your credentials...")
+            # Add to "accountant" group
+            group, _ = Group.objects.get_or_create(name="accountant")
+            user.groups.add(group)
+
+            # Optionally send email (integrate email backend here)
+
+    def update_unpaid_salary(self):
+        # Update unpaid salary at the start of each month
+        current_month = timezone.now().month
+        if self.unpaid_salary > 0:
+            self.unpaid_salary += self.salary  # Add salary amount to unpaid salary
+        else:
+            self.unpaid_salary = (
+                self.salary
+            )  # If unpaid salary is 0, set the first month's salary
+        self.save()
