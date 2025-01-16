@@ -1,12 +1,27 @@
 from django.db import models
 
-TIMETABLE_CHOICES = [
-    ("1", "07:20:00 - 08:00:00"),
-    ("2", "08:00:00 - 08:40:00"),
-    ("3", "08:40:00 - 09:20:00"),
-    ("4", "09:20:00 - 10:00:00"),
-    ("5", "10:20:00 - 11:00:00"),
-    ("6", "11:00:00 - 11:40:00"),
-    ("7", "11:40:00 - 12:20:00"),
-    ("8", "12:20:00 - 13:00:00"),
-]
+from academic.models import ClassRoom, Teacher, AllocatedSubject
+
+
+class Period(models.Model):
+    day_of_week = models.CharField(
+        max_length=10,
+        choices=[
+            ("Monday", "Monday"),
+            ("Tuesday", "Tuesday"),
+            ("Wednesday", "Wednesday"),
+            ("Thursday", "Thursday"),
+            ("Friday", "Friday"),
+        ],
+    )
+    start_time = models.TimeField()
+    end_time = models.TimeField()
+    classroom = models.ForeignKey(ClassRoom, on_delete=models.CASCADE)
+    subject = models.ForeignKey(AllocatedSubject, on_delete=models.CASCADE)
+    teacher = models.ForeignKey(Teacher, on_delete=models.CASCADE)
+
+    class Meta:
+        unique_together = ("day_of_week", "start_time", "classroom")
+
+    def __str__(self):
+        return f"{self.classroom} - {self.subject} ({self.day_of_week} {self.start_time}-{self.end_time})"
