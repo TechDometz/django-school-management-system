@@ -226,7 +226,7 @@ class SubTopic(models.Model):
         return self.name
 
 
-class SubjectAllocation(models.Model):
+class AllocatedSubject(models.Model):
     teacher_name = models.ForeignKey(Teacher, on_delete=models.CASCADE)
     subject = models.ForeignKey(
         Subject, on_delete=models.CASCADE, related_name="allocated_subjects"
@@ -236,12 +236,17 @@ class SubjectAllocation(models.Model):
     class_room = models.ForeignKey(
         ClassRoom, on_delete=models.CASCADE, related_name="subjects"
     )
+    weekly_periods = models.IntegerField(help_text="Total number of periods per week.")
+    max_daily_periods = models.IntegerField(
+        default=2,
+        help_text="Maximum number of periods allowed per day for this subject.",
+    )
 
     def __str__(self):
         return f"{self.teacher_name} - {self.subject} ({self.academic_year})"
 
     def subjects_data(self):
-        return list(self.subjects.all())
+        return list(self.subject.all())
 
 
 class Parent(models.Model):

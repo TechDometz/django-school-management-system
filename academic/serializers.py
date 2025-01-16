@@ -8,6 +8,8 @@ from .models import (
     GradeLevel,
     ClassLevel,
     Parent,
+    Teacher,
+    Subject,
 )
 
 
@@ -20,6 +22,18 @@ class ClassYearSerializer(serializers.ModelSerializer):
 class ClassLevelSerializer(serializers.ModelSerializer):
     class Meta:
         model = ClassLevel
+        fields = "__all__"
+
+
+class TeacherSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Teacher
+        fields = "__all__"
+
+
+class SubjectSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Subject
         fields = "__all__"
 
 
