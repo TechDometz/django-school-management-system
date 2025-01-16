@@ -4,8 +4,6 @@ from .models import (
     ClassYear,
     StudentsMedicalHistory,
     Student,
-    GradeScale,
-    GradeScaleRule,
     ClassRoom,
     GradeLevel,
     ClassLevel,
@@ -40,18 +38,6 @@ class ClassRoomSerializer(serializers.ModelSerializer):
 class StudentHealthRecordSerializer(serializers.ModelSerializer):
     class Meta:
         model = StudentsMedicalHistory
-        fields = "__all__"
-
-
-class GradeScaleSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = GradeScale
-        fields = "__all__"
-
-
-class GradeScaleRuleSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = GradeScaleRule
         fields = "__all__"
 
 

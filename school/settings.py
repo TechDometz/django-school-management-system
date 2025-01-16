@@ -39,6 +39,7 @@ INSTALLED_APPS = [
     "administration.apps.AdministrationConfig",
     "api.apps.ApiConfig",
     "attendance.apps.AttendanceConfig",
+    "examination.apps.ExaminationConfig",
     "finance.apps.FinanceConfig",
     "notes.apps.NotesConfig",
     "schedule.apps.ScheduleConfig",
