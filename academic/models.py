@@ -375,7 +375,7 @@ class Student(models.Model):
         parent, created = Parent.objects.get_or_create(
             phone_number=self.parent_contact,
             defaults={
-                "first_name": self.middle_name or "Unknown",
+                "first_name": self.first_name,
                 "last_name": self.last_name,
                 "email": f"parent_{self.first_name}_{self.last_name}@hayatul.com",
             },

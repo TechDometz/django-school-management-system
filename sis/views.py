@@ -1,3 +1,4 @@
+import openpyxl
 from rest_framework import views
 from rest_framework.views import APIView
 from academic.serializers import StudentSerializer
@@ -6,7 +7,7 @@ from rest_framework.response import Response
 from rest_framework import status
 from django.http import Http404
 
-from academic.models import Student
+from academic.models import Student, GradeLevel
 from academic.serializers import StudentSerializer
 
 
@@ -88,11 +89,9 @@ class BulkUploadStudentsView(APIView):
                 "parent_contact",
                 "region",
                 "city",
-                "street",
                 "grade_level",
                 "gender",
                 "date_of_birth",
-                "class_of_year",
             ]
 
             students_to_create = []
@@ -101,16 +100,14 @@ class BulkUploadStudentsView(APIView):
             ):
                 # Map row data to the expected columns
                 student_data = dict(zip(columns, row))
+                # print(student_data)
 
                 # Validate and prepare the data
                 try:
                     grade_level = GradeLevel.objects.get(
                         name=student_data["grade_level"]
                     )
-                    class_of_year = ClassYear.objects.get(
-                        year=student_data["class_of_year"]
-                    )
-                except (GradeLevel.DoesNotExist, ClassYear.DoesNotExist) as e:
+                except GradeLevel.DoesNotExist as e:
                     return Response(
                         {"error": f"Row {i}: {str(e)}"},
                         status=status.HTTP_400_BAD_REQUEST,
@@ -124,13 +121,13 @@ class BulkUploadStudentsView(APIView):
                     parent_contact=student_data["parent_contact"],
                     region=student_data["region"],
                     city=student_data["city"],
-                    street=student_data["street"],
                     grade_level=grade_level,
                     gender=student_data["gender"],
                     date_of_birth=student_data["date_of_birth"],
-                    class_of_year=class_of_year,
                 )
                 students_to_create.append(student)
+
+            # print(students_to_create)
 
             # Bulk create students
             Student.objects.bulk_create(students_to_create)
