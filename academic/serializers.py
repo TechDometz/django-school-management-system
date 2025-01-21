@@ -10,6 +10,9 @@ from .models import (
     Parent,
     Teacher,
     Subject,
+    Department,
+    Stream,
+    ReasonLeft,
 )
 
 
@@ -19,9 +22,27 @@ class ClassYearSerializer(serializers.ModelSerializer):
         fields = "__all__"
 
 
+class DepartmentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Department
+        fields = "__all__"
+
+
 class ClassLevelSerializer(serializers.ModelSerializer):
     class Meta:
         model = ClassLevel
+        fields = "__all__"
+
+
+class StreamSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Stream
+        fields = "__all__"
+
+
+class ReasonLeftSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ReasonLeft
         fields = "__all__"
 
 
@@ -115,31 +136,3 @@ class StudentSerializer(serializers.ModelSerializer):
 
         student.save()
         return student
-
-    def bulk_create(self, student_data_list):
-        # Assuming student_data_list is a list of dictionaries for bulk creation
-        students = []
-        for data in student_data_list:
-            student = Student(
-                first_name=data["first_name"].lower(),
-                middle_name=data["middle_name"].lower(),
-                last_name=data["last_name"].lower(),
-                admission_number=data["addmission_number"],
-                parent_contact=data["parent_contact"],
-                grade_level=GradeLevel.objects.get(name=data["grade_level"]),
-                gender=data["gender"],
-                date_of_birth=data.get(
-                    "date_of_birth", "2000-01-01"
-                ),  # Default fallback
-            )
-
-            # Optional: Handle 'class_of_year' if needed
-            if "class_of_year" in data:
-                student.class_of_year = ClassYear.objects.get(
-                    year=data["class_of_year"]
-                )
-
-            student.save()
-            students.append(student)
-
-        return students

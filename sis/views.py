@@ -1,15 +1,12 @@
-from rest_framework import generics, views
-from rest_framework.parsers import FileUploadParser
+from rest_framework import views
+from rest_framework.views import APIView
+from academic.serializers import StudentSerializer
 from rest_framework.permissions import IsAuthenticated, IsAdminUser
 from rest_framework.response import Response
 from rest_framework import status
 from django.http import Http404
-from openpyxl import load_workbook, Workbook
-from openpyxl.utils import get_column_letter
 
 from academic.models import Student
-
-from .serializers import FileUploadSerializer
 from academic.serializers import StudentSerializer
 
 
@@ -65,64 +62,88 @@ class StudentDetailView(views.APIView):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
-class StudentBulkUploadView(views.APIView):
+class BulkUploadStudentsView(APIView):
     """
-    This uploads bulk number of students from excel file
+    API View to handle bulk uploading of students from an Excel file.
     """
 
-    parser_class = [FileUploadParser]
+    def post(self, request, *args, **kwargs):
+        file = request.FILES.get("file")
+        if not file:
+            return Response(
+                {"error": "No file provided."}, status=status.HTTP_400_BAD_REQUEST
+            )
 
-    def post(self, request, filename, format="xlsx"):
-        file_obj = request.data
+        try:
+            # Load the Excel file
+            workbook = openpyxl.load_workbook(file)
+            sheet = workbook.active  # Assuming data is in the first sheet
 
-        xlfile = file_obj["filename"]
-        print(xlfile)
+            # Expected columns in the Excel file
+            columns = [
+                "first_name",
+                "middle_name",
+                "last_name",
+                "admission_number",
+                "parent_contact",
+                "region",
+                "city",
+                "street",
+                "grade_level",
+                "gender",
+                "date_of_birth",
+                "class_of_year",
+            ]
 
-        wb = load_workbook(xlfile)
-        ws = wb.active
-        print(ws.title)
+            students_to_create = []
+            for i, row in enumerate(
+                sheet.iter_rows(min_row=2, values_only=True), start=2
+            ):
+                # Map row data to the expected columns
+                student_data = dict(zip(columns, row))
 
-        studentz = []
-        for row in ws.iter_rows(min_row=5, max_col=9, max_row=99, values_only=True):
-            studentz.append(row)
-        # print(studentz)
+                # Validate and prepare the data
+                try:
+                    grade_level = GradeLevel.objects.get(
+                        name=student_data["grade_level"]
+                    )
+                    class_of_year = ClassYear.objects.get(
+                        year=student_data["class_of_year"]
+                    )
+                except (GradeLevel.DoesNotExist, ClassYear.DoesNotExist) as e:
+                    return Response(
+                        {"error": f"Row {i}: {str(e)}"},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
 
-        students = []
-        for i in range(len(studentz)):
-            student = {
-                "first_name": f"{studentz[i][1].split()[0]}",
-                "middle_name": f"{studentz[i][1].split()[1]}",
-                "last_name": f"{studentz[i][1].split()[2]}",
-                "gender": f"{studentz[i][2]}",
-                "prem number": f"{studentz[i][0]}",
-                "grade_level": f"{studentz[i][3]}",
-                "parent_contact": f"{studentz[i][4]}",
-                "addmission_number": f"{studentz[i][5]}",
-                "religion": f"{studentz[i][7]}",
-            }
-            students.append(student)
-        print(students)
+                student = Student(
+                    first_name=student_data["first_name"],
+                    middle_name=student_data["middle_name"],
+                    last_name=student_data["last_name"],
+                    admission_number=student_data["admission_number"],
+                    parent_contact=student_data["parent_contact"],
+                    region=student_data["region"],
+                    city=student_data["city"],
+                    street=student_data["street"],
+                    grade_level=grade_level,
+                    gender=student_data["gender"],
+                    date_of_birth=student_data["date_of_birth"],
+                    class_of_year=class_of_year,
+                )
+                students_to_create.append(student)
 
-        created = []
-        exist = []
-        for student in students:
-            if student in Student.objects.all():
-                print("student exists!")
-                exist.append(student)
-                continue
-            else:
-                serializer = StudentSerializer(data=student)
-                print(serializer.is_valid())
-                if serializer.is_valid():
-                    student = serializer.bulk_create(student)
-                    created.append(student)
-                    # if student:
-                    # serializer.save()
-                    # serializer.save()
+            # Bulk create students
+            Student.objects.bulk_create(students_to_create)
 
-        return Response(
-            data={"created": created, "existing": exist}, status=status.HTTP_201_CREATED
-        )
+            return Response(
+                {
+                    "message": f"{len(students_to_create)} students successfully uploaded."
+                },
+                status=status.HTTP_201_CREATED,
+            )
+
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 
 """

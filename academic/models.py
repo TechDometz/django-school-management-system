@@ -367,18 +367,33 @@ class Student(models.Model):
         super().clean()
 
     def save(self, *args, **kwargs):
+        # Validate parent_contact presence
+        if not self.parent_contact:
+            raise ValidationError("Parent contact is required.")
+
         # Create parent if not exists
-        if self.parent_contact:
-            parent, _ = Parent.objects.get_or_create(
-                phone_number=self.parent_contact,
-                defaults={
-                    "first_name": self.middle_name,
-                    "last_name": self.last_name,
-                    "email": f"parent_{self.first_name}_{self.last_name}@example.com",
-                },
-            )
-            self.parent_guardian = parent
+        parent, created = Parent.objects.get_or_create(
+            phone_number=self.parent_contact,
+            defaults={
+                "first_name": self.middle_name or "Unknown",
+                "last_name": self.last_name,
+                "email": f"parent_{self.first_name}_{self.last_name}@hayatul.com",
+            },
+        )
+        self.parent_guardian = parent
+
+        # Check for existing siblings
+        existing_sibling = (
+            Student.objects.filter(parent_contact=self.parent_contact)
+            .exclude(id=self.id)
+            .first()
+        )
         super().save(*args, **kwargs)
+
+        if existing_sibling:
+            # Link siblings
+            self.siblings.add(existing_sibling)
+            existing_sibling.siblings.add(self)
 
     def update_debt(self, term_fee):
         """
