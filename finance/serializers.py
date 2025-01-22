@@ -2,7 +2,7 @@ from rest_framework import serializers
 from .models import Receipt, Payment, ReceiptAllocation, PaymentAllocation
 from academic.models import Student
 from users.models import CustomUser, Accountant
-from academic.serializers import StudentSerializer
+from sis.serializers import StudentSerializer
 from users.serializers import AccountantSerializer, UserSerializer
 
 

@@ -354,7 +354,7 @@ class Student(models.Model):
     debt = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal("0.00"))
 
     def __str__(self):
-        return f"{self.first_name} {self.last_name} - Debt: {self.debt}"
+        return f"{self.admission_number} - {self.first_name} {self.last_name} - Debt: {self.debt}"
 
     @property
     def full_name(self):
@@ -375,12 +375,17 @@ class Student(models.Model):
         parent, created = Parent.objects.get_or_create(
             phone_number=self.parent_contact,
             defaults={
-                "first_name": self.first_name,
+                "first_name": self.middle_name or "Unknown",
                 "last_name": self.last_name,
-                "email": f"parent_{self.first_name}_{self.last_name}@hayatul.com",
+                "email": f"parent_of_{self.first_name}_{self.last_name}@hayatul.com",
+                "phone_number": self.parent_contact,
             },
         )
+        print(parent)
         self.parent_guardian = parent
+        print(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>")
+        print(self.parent_contact)
+        print(self.parent_guardian.email)
 
         # Check for existing siblings
         existing_sibling = (

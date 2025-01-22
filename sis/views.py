@@ -1,14 +1,13 @@
 import openpyxl
 from rest_framework import views
 from rest_framework.views import APIView
-from academic.serializers import StudentSerializer
 from rest_framework.permissions import IsAuthenticated, IsAdminUser
 from rest_framework.response import Response
 from rest_framework import status
 from django.http import Http404
 
-from academic.models import Student, GradeLevel
-from academic.serializers import StudentSerializer
+from academic.models import Student, GradeLevel, Parent
+from .serializers import StudentSerializer
 
 
 class StudentListView(views.APIView):
@@ -95,12 +94,13 @@ class BulkUploadStudentsView(APIView):
             ]
 
             students_to_create = []
+            sibling_relationships = []  # To store sibling pairs for linking
+
             for i, row in enumerate(
                 sheet.iter_rows(min_row=2, values_only=True), start=2
             ):
                 # Map row data to the expected columns
                 student_data = dict(zip(columns, row))
-                # print(student_data)
 
                 # Validate and prepare the data
                 try:
@@ -113,24 +113,51 @@ class BulkUploadStudentsView(APIView):
                         status=status.HTTP_400_BAD_REQUEST,
                     )
 
+                # Handle parent relationship
+                parent_contact = student_data["parent_contact"]
+                parent = None
+                if parent_contact:
+                    parent, _ = Parent.objects.get_or_create(
+                        phone_number=parent_contact,
+                        defaults={
+                            "first_name": student_data["middle_name"],
+                            "last_name": student_data["last_name"],
+                            "email": f"parent_{student_data['first_name']}_{student_data['last_name']}@hayatul.com",
+                        },
+                    )
+
+                # Check for existing siblings
+                existing_sibling = Student.objects.filter(
+                    parent_contact=parent_contact
+                ).first()
+
+                # Prepare the student instance
                 student = Student(
                     first_name=student_data["first_name"],
                     middle_name=student_data["middle_name"],
                     last_name=student_data["last_name"],
                     admission_number=student_data["admission_number"],
-                    parent_contact=student_data["parent_contact"],
+                    parent_contact=parent_contact,
                     region=student_data["region"],
                     city=student_data["city"],
                     grade_level=grade_level,
                     gender=student_data["gender"],
                     date_of_birth=student_data["date_of_birth"],
+                    parent_guardian=parent,  # Assign the parent to the student
                 )
                 students_to_create.append(student)
 
-            # print(students_to_create)
+                # Store sibling relationships for later processing
+                if existing_sibling:
+                    sibling_relationships.append((student, existing_sibling))
 
             # Bulk create students
             Student.objects.bulk_create(students_to_create)
+
+            # Link sibling relationships
+            for new_student, sibling in sibling_relationships:
+                new_student.siblings.add(sibling)
+                sibling.siblings.add(new_student)
 
             return Response(
                 {
