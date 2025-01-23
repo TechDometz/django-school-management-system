@@ -6,7 +6,7 @@ from rest_framework.response import Response
 from rest_framework import status
 from django.http import Http404
 
-from academic.models import Student, GradeLevel, Parent
+from academic.models import Student, ClassLevel, Parent
 from .serializers import StudentSerializer
 
 
@@ -88,7 +88,7 @@ class BulkUploadStudentsView(APIView):
                 "parent_contact",
                 "region",
                 "city",
-                "grade_level",
+                "class_level",
                 "gender",
                 "date_of_birth",
             ]
@@ -104,10 +104,10 @@ class BulkUploadStudentsView(APIView):
 
                 # Validate and prepare the data
                 try:
-                    grade_level = GradeLevel.objects.get(
-                        name=student_data["grade_level"]
+                    class_level = ClassLevel.objects.get(
+                        name=student_data["class_level"]
                     )
-                except GradeLevel.DoesNotExist as e:
+                except ClassLevel.DoesNotExist as e:
                     return Response(
                         {"error": f"Row {i}: {str(e)}"},
                         status=status.HTTP_400_BAD_REQUEST,
@@ -122,7 +122,7 @@ class BulkUploadStudentsView(APIView):
                         defaults={
                             "first_name": student_data["middle_name"],
                             "last_name": student_data["last_name"],
-                            "email": f"parent_{student_data['first_name']}_{student_data['last_name']}@hayatul.com",
+                            "email": f"parent_of_{student_data['first_name']}_{student_data['last_name']}@hayatul.com",
                         },
                     )
 
@@ -140,7 +140,7 @@ class BulkUploadStudentsView(APIView):
                     parent_contact=parent_contact,
                     region=student_data["region"],
                     city=student_data["city"],
-                    grade_level=grade_level,
+                    class_level=class_level,
                     gender=student_data["gender"],
                     date_of_birth=student_data["date_of_birth"],
                     parent_guardian=parent,  # Assign the parent to the student

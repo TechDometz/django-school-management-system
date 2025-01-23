@@ -114,8 +114,8 @@ class Teacher(models.Model):
         self.save()
 
 
-class ClassLevel(models.Model):
-    id = models.IntegerField(unique=True, primary_key=True, verbose_name="Class Level")
+class GradeLevel(models.Model):
+    id = models.IntegerField(unique=True, primary_key=True, verbose_name="Grade Level")
     name = models.CharField(max_length=150, unique=True)
 
     class Meta:
@@ -125,9 +125,12 @@ class ClassLevel(models.Model):
         return self.name
 
 
-class GradeLevel(models.Model):
-    id = models.IntegerField(unique=True, primary_key=True, verbose_name="Grade Level")
+class ClassLevel(models.Model):
+    id = models.IntegerField(unique=True, primary_key=True, verbose_name="Class Level")
     name = models.CharField(max_length=150, unique=True)
+    grade_level = models.ForeignKey(
+        GradeLevel, blank=True, null=True, on_delete=models.SET_NULL
+    )
 
     class Meta:
         ordering = ("id",)
@@ -173,9 +176,6 @@ class ClassRoom(models.Model):
         Stream, on_delete=models.CASCADE, blank=True, related_name="class_stream"
     )
     class_teacher = models.ForeignKey(Teacher, on_delete=models.CASCADE, blank=True)
-    grade_level = models.ForeignKey(
-        GradeLevel, blank=True, null=True, on_delete=models.SET_NULL
-    )
     capacity = models.PositiveIntegerField(default=40, blank=True)
     occupied_sits = models.PositiveIntegerField(default=0, blank=True)
 
@@ -318,8 +318,8 @@ class Student(models.Model):
     )
     last_name = models.CharField(max_length=150, null=True, verbose_name="Last Name")
     graduation_date = models.DateField(blank=True, null=True)
-    grade_level = models.ForeignKey(
-        GradeLevel, blank=True, null=True, on_delete=models.SET_NULL
+    class_level = models.ForeignKey(
+        ClassLevel, blank=True, null=True, on_delete=models.SET_NULL
     )
     class_of_year = models.ForeignKey(
         ClassYear, blank=True, null=True, on_delete=models.SET_NULL
@@ -381,11 +381,8 @@ class Student(models.Model):
                 "phone_number": self.parent_contact,
             },
         )
-        print(parent)
+
         self.parent_guardian = parent
-        print(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>")
-        print(self.parent_contact)
-        print(self.parent_guardian.email)
 
         # Check for existing siblings
         existing_sibling = (

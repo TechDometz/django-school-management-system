@@ -5,9 +5,9 @@ from academic.models import (
     Student,
     Parent,
     ReasonLeft,
-    GradeLevel,
+    ClassLevel,
 )
-from academic.serializers import GradeLevelSerializer, ClassYearSerializer
+from academic.serializers import ClassLevelSerializer, ClassYearSerializer
 
 
 class ReasonLeftSerializer(serializers.ModelSerializer):
@@ -29,7 +29,7 @@ class ParentSerializer(serializers.ModelSerializer):
 
 
 class StudentSerializer(serializers.ModelSerializer):
-    grade_level = serializers.SerializerMethodField(read_only=True)
+    class_level = serializers.SerializerMethodField(read_only=True)
     class_of_year = serializers.SerializerMethodField(read_only=True)
     parent_guardian = serializers.SerializerMethodField(read_only=True)
 
@@ -37,9 +37,9 @@ class StudentSerializer(serializers.ModelSerializer):
         model = Student
         fields = "__all__"
 
-    def get_grade_level(self, obj):
-        grade_level = obj.grade_level
-        serializer = GradeLevelSerializer(grade_level, many=False)
+    def get_class_level(self, obj):
+        class_level = obj.class_level
+        serializer = ClassLevelSerializer(class_level, many=False)
         return serializer.data["name"]
 
     def get_class_of_year(self, obj):
@@ -63,7 +63,7 @@ class StudentSerializer(serializers.ModelSerializer):
             region=validated_data["region"],
             city=validated_data["city"],
             street=validated_data["street"],
-            grade_level=GradeLevel.objects.get(name=validated_data["grade_level"]),
+            class_level=ClassLevel.objects.get(name=data["class_level"]),
             gender=validated_data["gender"],
             date_of_birth=validated_data["date_of_birth"],
         )
@@ -89,7 +89,7 @@ class StudentSerializer(serializers.ModelSerializer):
                 parent_contact=data["parent_contact"],
                 region=data["region"],
                 city=data["city"],
-                grade_level=GradeLevel.objects.get(name=data["grade_level"]),
+                class_level=ClassLevel.objects.get(name=data["class_level"]),
                 gender=data["gender"],
                 date_of_birth=data.get(
                     "date_of_birth", "2000-01-01"
