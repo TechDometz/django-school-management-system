@@ -1,4 +1,5 @@
 import openpyxl
+from django.contrib.auth.models import Group
 from rest_framework import viewsets
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated, IsAdminUser
@@ -139,45 +140,122 @@ class BulkUploadTeachersView(APIView):
                 "first_name",
                 "middle_name",
                 "last_name",
-                "email",
                 "phone_number",
                 "employment_id",
-                "short_name",
-                "subject_specialization",  # Should be a comma-separated list of subjects
+                "subject_specialization",  # Should match subject names as a comma-separated string
                 "address",
                 "gender",
                 "date_of_birth",
                 "salary",
             ]
 
-            teachers_data = []
+            teachers_to_create = []
             for i, row in enumerate(
                 sheet.iter_rows(min_row=2, values_only=True), start=2
             ):
                 # Map row data to the expected columns
                 teacher_data = dict(zip(columns, row))
 
-                # Handle subject_specialization as a list
-                if teacher_data.get("subject_specialization"):
-                    teacher_data["subject_specialization"] = [
-                        subject.strip()
-                        for subject in teacher_data["subject_specialization"].split(",")
-                    ]
+                try:
+                    # Generate email based on first_name and last_name
+                    generated_email = (
+                        f"{teacher_data['first_name'].lower()}."
+                        f"{teacher_data['last_name'].lower()}@hayatul.com"
+                    )
+                    teacher_data["email"] = generated_email
 
-                teachers_data.append(teacher_data)
+                    # Check for duplicate email
+                    if Teacher.objects.filter(email=generated_email).exists():
+                        return Response(
+                            {
+                                "error": f"Row {i}: Email '{generated_email}' already exists."
+                            },
+                            status=status.HTTP_400_BAD_REQUEST,
+                        )
 
-            # Validate and create teachers in bulk using the serializer
-            serializer = TeacherSerializer(data=teachers_data, many=True)
-            if serializer.is_valid():
-                serializer.save()
-                return Response(
-                    {
-                        "message": f"{len(teachers_data)} teachers successfully uploaded."
-                    },
-                    status=status.HTTP_201_CREATED,
-                )
-            else:
-                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+                    # Check for duplicate phone number
+                    if Teacher.objects.filter(
+                        phone_number=teacher_data["phone_number"]
+                    ).exists():
+                        return Response(
+                            {"error": f"Row {i}: Phone number already exists."},
+                            status=status.HTTP_400_BAD_REQUEST,
+                        )
+
+                    # Validate subject specialization
+                    subjects = []
+                    subject_names = (
+                        teacher_data["subject_specialization"].lower().split(",")
+                        if teacher_data["subject_specialization"].lower()
+                        else []
+                    )
+                    for subject_name in subject_names:
+                        try:
+                            subject = Subject.objects.get(name=subject_name.strip())
+                            subjects.append(subject)
+                        except Subject.DoesNotExist:
+                            return Response(
+                                {
+                                    "error": f"Row {i}: Subject '{subject_name.strip()}' does not exist."
+                                },
+                                status=status.HTTP_400_BAD_REQUEST,
+                            )
+
+                    # Create Teacher object
+                    teacher = Teacher(
+                        first_name=teacher_data["first_name"].lower(),
+                        middle_name=teacher_data["middle_name"].lower(),
+                        last_name=teacher_data["last_name"].lower(),
+                        email=generated_email,
+                        phone_number=teacher_data["phone_number"],
+                        empId=teacher_data["employment_id"],
+                        address=teacher_data["address"],
+                        gender=teacher_data["gender"],
+                        date_of_birth=teacher_data["date_of_birth"],
+                        salary=teacher_data["salary"],
+                    )
+                    teacher.save()
+
+                    # Assign subjects
+                    if subjects:
+                        teacher.subject_specialization.set(subjects)
+
+                    # Create corresponding user
+                    if not teacher.username:
+                        teacher.username = f"{teacher.first_name.lower()}{teacher.last_name.lower()}{get_random_string(4)}"
+                    teacher.save()
+
+                    user, created = User.objects.get_or_create(
+                        email=teacher.email,
+                        defaults={
+                            "first_name": teacher.first_name,
+                            "last_name": teacher.last_name,
+                            "is_teacher": True,
+                        },
+                    )
+                    if created:
+                        default_password = f"Complex.{teacher.empId[-4:] if teacher.empId and len(teacher.empId) >= 4 else '0000'}"
+                        user.set_password(default_password)
+                        user.save()
+
+                        # Add to "teacher" group
+                        group, _ = Group.objects.get_or_create(name="teacher")
+                        user.groups.add(group)
+
+                    teachers_to_create.append(teacher)
+
+                except Exception as e:
+                    return Response(
+                        {"error": f"Row {i}: {str(e)}"},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+
+            return Response(
+                {
+                    "message": f"{len(teachers_to_create)} teachers successfully uploaded."
+                },
+                status=status.HTTP_201_CREATED,
+            )
 
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
