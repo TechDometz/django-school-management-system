@@ -183,7 +183,7 @@ class Term(models.Model):
         AcademicYear, on_delete=models.CASCADE, related_name="terms"
     )
     default_term_fee = models.DecimalField(
-        max_digits=10, decimal_places=2, default=0.00
+        max_digits=10, decimal_places=2, default=312500
     )
     start_date = models.DateField()
     end_date = models.DateField()

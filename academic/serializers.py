@@ -37,9 +37,19 @@ class StreamSerializer(serializers.ModelSerializer):
 
 
 class SubjectSerializer(serializers.ModelSerializer):
+    department = serializers.PrimaryKeyRelatedField(queryset=Department.objects.all())
+
     class Meta:
         model = Subject
         fields = "__all__"
+
+    def validate_subject_code(self, value):
+        # Add custom validation if needed (e.g., regex validation)
+        if len(value) < 3:
+            raise serializers.ValidationError(
+                "Subject code must be at least 3 characters."
+            )
+        return value
 
 
 class GradeLevelSerializer(serializers.ModelSerializer):

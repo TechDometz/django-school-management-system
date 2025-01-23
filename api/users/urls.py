@@ -6,6 +6,7 @@ from users.views import (
     UserViewSet,
     AccountantViewSet,
     TeacherViewSet,
+    BulkUploadTeachersView,
 )
 
 # Initialize the router
@@ -17,6 +18,7 @@ router.register(r"teachers", TeacherViewSet, basename="teacher")
 urlpatterns = [
     # JWT Token endpoint
     path("login/", MyTokenObtainPairView.as_view(), name="token_obtain_pair"),
+    path("teachers/bulk-upload/", BulkUploadTeachersView.as_view()),
     # Include ViewSet routes
     path("", include(router.urls)),
 ]

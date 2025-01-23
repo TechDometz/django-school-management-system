@@ -16,7 +16,7 @@ from administration.common_objs import *
 class Department(models.Model):
     name = models.CharField(max_length=255, unique=True)
     order_rank = models.IntegerField(
-        blank=True, null=True, help_text="Rank for course reports"
+        blank=True, null=True, help_text="Rank for subject reports"
     )
 
     class Meta:
@@ -24,6 +24,11 @@ class Department(models.Model):
 
     def __str__(self):
         return self.name
+
+    def save(self, *args, **kwargs):
+        self.name = self.name.lower()
+
+        super().save(*args, **kwargs)
 
 
 class Subject(models.Model):
@@ -40,6 +45,18 @@ class Subject(models.Model):
 
     def __str__(self):
         return self.name
+
+    class Meta:
+        ordering = ["name"]
+        verbose_name = "Subject"
+        verbose_name_plural = "Subjects"
+
+    def save(self, *args, **kwargs):
+        # Generate description
+        self.name = self.name.lower()
+        self.description = f"{self.name.lower()} - {self.subject_code}"
+
+        super().save(*args, **kwargs)
 
 
 class Teacher(models.Model):
@@ -80,6 +97,7 @@ class Teacher(models.Model):
         # Generate unique username
         if not self.username:
             self.username = f"{self.first_name.lower()}{self.last_name.lower()}{get_random_string(4)}"
+        self.email = f"{self.first_name}.{self.last_name}@hayatul.com"
 
         # Create corresponding user
         super().save(*args, **kwargs)
