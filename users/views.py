@@ -142,6 +142,7 @@ class BulkUploadTeachersView(APIView):
                 "last_name",
                 "phone_number",
                 "employment_id",
+                "short_name",
                 "subject_specialization",  # Should match subject names as a comma-separated string
                 "address",
                 "gender",
@@ -150,6 +151,8 @@ class BulkUploadTeachersView(APIView):
             ]
 
             teachers_to_create = []
+            not_created = []
+
             for i, row in enumerate(
                 sheet.iter_rows(min_row=2, values_only=True), start=2
             ):
@@ -166,20 +169,14 @@ class BulkUploadTeachersView(APIView):
 
                     # Check for duplicate email
                     if Teacher.objects.filter(email=generated_email).exists():
-                        return Response(
-                            {
-                                "error": f"Row {i}: Email '{generated_email}' already exists."
-                            },
-                            status=status.HTTP_400_BAD_REQUEST,
-                        )
+                        raise ValueError(f"Email '{generated_email}' already exists.")
 
                     # Check for duplicate phone number
                     if Teacher.objects.filter(
                         phone_number=teacher_data["phone_number"]
                     ).exists():
-                        return Response(
-                            {"error": f"Row {i}: Phone number already exists."},
-                            status=status.HTTP_400_BAD_REQUEST,
+                        raise ValueError(
+                            f"Phone number '{teacher_data['phone_number']}' already exists."
                         )
 
                     # Validate subject specialization
@@ -194,19 +191,17 @@ class BulkUploadTeachersView(APIView):
                             subject = Subject.objects.get(name=subject_name.strip())
                             subjects.append(subject)
                         except Subject.DoesNotExist:
-                            return Response(
-                                {
-                                    "error": f"Row {i}: Subject '{subject_name.strip()}' does not exist."
-                                },
-                                status=status.HTTP_400_BAD_REQUEST,
+                            raise ValueError(
+                                f"Subject '{subject_name.strip()}' does not exist."
                             )
 
                     # Create Teacher object
                     teacher = Teacher(
-                        first_name=teacher_data["first_name"].lower(),
-                        middle_name=teacher_data["middle_name"].lower(),
-                        last_name=teacher_data["last_name"].lower(),
+                        first_name=teacher_data["first_name"],
+                        middle_name=teacher_data["middle_name"],
+                        last_name=teacher_data["last_name"],
                         email=generated_email,
+                        short_name=teacher_data["short_name"],
                         phone_number=teacher_data["phone_number"],
                         empId=teacher_data["employment_id"],
                         address=teacher_data["address"],
@@ -245,14 +240,14 @@ class BulkUploadTeachersView(APIView):
                     teachers_to_create.append(teacher)
 
                 except Exception as e:
-                    return Response(
-                        {"error": f"Row {i}: {str(e)}"},
-                        status=status.HTTP_400_BAD_REQUEST,
-                    )
+                    # Add row data and error message to the not_created list
+                    teacher_data["error"] = str(e)
+                    not_created.append(teacher_data)
 
             return Response(
                 {
-                    "message": f"{len(teachers_to_create)} teachers successfully uploaded."
+                    "message": f"{len(teachers_to_create)} teachers successfully uploaded.",
+                    "not_created": not_created,
                 },
                 status=status.HTTP_201_CREATED,
             )
