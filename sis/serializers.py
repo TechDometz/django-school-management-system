@@ -6,6 +6,7 @@ from academic.models import (
     Parent,
     ReasonLeft,
     ClassLevel,
+    ClassYear,
 )
 from academic.serializers import ClassLevelSerializer, ClassYearSerializer
 
