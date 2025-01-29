@@ -3,9 +3,9 @@ from .models import Period
 from academic.models import AllocatedSubject
 from academic.serializers import (
     ClassRoomSerializer,
-    TeacherSerializer,
     SubjectSerializer,
 )
+from users.serializers import TeacherSerializer
 from administration.serializers import TermSerializer
 
 

@@ -64,7 +64,7 @@ class Teacher(models.Model):
     user = models.OneToOneField(
         CustomUser,
         on_delete=models.CASCADE,
-        related_name="accountant",
+        related_name="teacher",
         null=True,
         blank=True,
     )
@@ -287,6 +287,13 @@ class AllocatedSubject(models.Model):
 
 
 class Parent(models.Model):
+    user = models.OneToOneField(
+        CustomUser,
+        on_delete=models.CASCADE,
+        related_name="parent",
+        null=True,
+        blank=True,
+    )
     first_name = models.CharField(
         max_length=300, verbose_name="First Name", blank=True, null=True
     )
@@ -330,24 +337,34 @@ class Parent(models.Model):
         return f"{self.first_name} {self.last_name} ({self.email})"
 
     def save(self, *args, **kwargs):
-        super().save(*args, **kwargs)
+        """
+        When an parent is created, generate a CustomUser instance for login.
+        """
 
-        # Create a user account for the parent if not exists
-        user, created = CustomUser.objects.get_or_create(
-            email=self.email,
-            defaults={
-                "first_name": self.first_name,
-                "last_name": self.last_name,
-                "is_parent": True,
-            },
-        )
-        if created:
-            user.set_password(f"{self.first_name}{self.last_name}".lower())
+        if not self.user:
+            # Create the user if it doesn't exist
+            user = CustomUser.objects.create(
+                first_name=self.first_name,
+                last_name=self.last_name,
+                email=self.email,
+                is_parent=True,
+            )
+
+            # Set a default password using empId (if available) or fallback
+            default_password = f"Complex.0000"
+            user.set_password(default_password)
             user.save()
 
-        # Assign to "parent" group
-        group, _ = Group.objects.get_or_create(name="parent")
-        user.groups.add(group)
+            # Attach the created user to the parent
+            self.user = user
+
+            # Add user to "parent" group
+            group, _ = Group.objects.get_or_create(name="parent")
+            user.groups.add(group)
+
+        super().save(*args, **kwargs)
+
+        # Optionally send email (integrate email backend here)
 
 
 class Student(models.Model):

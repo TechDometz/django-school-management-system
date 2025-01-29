@@ -1,7 +1,8 @@
 import openpyxl
 from django.db.models import Q
 from django.contrib.auth.models import Group
-from rest_framework import viewsets, generics, views
+from django.shortcuts import get_object_or_404
+from rest_framework import viewsets, views
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated, IsAdminUser
 from rest_framework.pagination import PageNumberPagination
@@ -9,16 +10,15 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
-from django.shortcuts import get_object_or_404
 
 from academic.models import Teacher, Subject, Parent
-from academic.serializers import ParentSerializer
 from .models import CustomUser as User, Accountant
 from .serializers import (
     UserSerializer,
     UserSerializerWithToken,
     AccountantSerializer,
     TeacherSerializer,
+    ParentSerializer,
 )
 
 
@@ -85,9 +85,6 @@ class UserListView(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-
-
-
 class UserDetailView(views.APIView):
     permission_classes = [IsAuthenticated]
 
@@ -114,6 +111,7 @@ class UserDetailView(views.APIView):
         user = self.get_object(pk)
         user.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+
 
 # Accountant Views
 class AccountantViewSet(viewsets.ModelViewSet):
@@ -162,15 +160,11 @@ class ParentListView(APIView):
         max_page_size = 100  # Maximum allowed page size
 
     def get(self, request, format=None):
-        # Retrieve search query parameters
         first_name_query = request.query_params.get("first_name", "")
         last_name_query = request.query_params.get("last_name", "")
         email_query = request.query_params.get("email", "")
 
-        # Start with all parents
         parents = Parent.objects.all()
-
-        # Apply filters dynamically based on provided query parameters
         filters = Q()
         if first_name_query:
             filters &= Q(first_name__icontains=first_name_query)
@@ -179,39 +173,29 @@ class ParentListView(APIView):
         if email_query:
             filters &= Q(email__icontains=email_query)
 
-        # Apply the combined filters to the queryset
         if filters:
             parents = parents.filter(filters)
 
-        # Paginate the results
         paginator = self.ParentPagination()
         paginated_parents = paginator.paginate_queryset(parents, request)
         serializer = ParentSerializer(paginated_parents, many=True)
         return paginator.get_paginated_response(serializer.data)
 
     def post(self, request, format=None):
-        data = request.data
-        serializer = ParentSerializer(data=data)
+        serializer = ParentSerializer(data=request.data)
         if serializer.is_valid():
             parent = serializer.save()
             return Response(
-                ParentSerializer(parent).data,
-                status=status.HTTP_201_CREATED,
+                ParentSerializer(parent).data, status=status.HTTP_201_CREATED
             )
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-
-
 
 
 class ParentDetailView(views.APIView):
     permission_classes = [IsAuthenticated]
 
     def get_object(self, pk):
-        try:
-            return Parent.objects.get(pk=pk)
-        except Parent.DoesNotExist:
-            raise Http404
+        return get_object_or_404(Parent, pk=pk)
 
     def get(self, request, pk, format=None):
         parent = self.get_object(pk)
@@ -222,7 +206,22 @@ class ParentDetailView(views.APIView):
         parent = self.get_object(pk)
         serializer = ParentSerializer(parent, data=request.data)
         if serializer.is_valid():
-            serializer.save()
+            updated_parent = serializer.save()
+
+            # Update the linked CustomUser when parent details change
+            email = updated_parent.email
+            first_name = updated_parent.first_name
+            last_name = updated_parent.last_name
+
+            try:
+                user = User.objects.get(email=parent.email)
+                user.email = email
+                user.first_name = first_name
+                user.last_name = last_name
+                user.save()
+            except User.DoesNotExist:
+                pass  # If user does not exist, no update is needed
+
             return Response(serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -266,7 +265,6 @@ class TeacherViewSet(viewsets.ModelViewSet):
         teacher = get_object_or_404(Teacher, pk=pk)
         teacher.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
-
 
 
 class BulkUploadTeachersView(APIView):
