@@ -37,7 +37,6 @@ INSTALLED_APPS = [
     "debug_toolbar",
     "academic.apps.AcademicConfig",
     "administration.apps.AdministrationConfig",
-    "api.apps.ApiConfig",
     "attendance.apps.AttendanceConfig",
     "examination.apps.ExaminationConfig",
     "finance.apps.FinanceConfig",

@@ -39,71 +39,85 @@ class StudentSerializer(serializers.ModelSerializer):
         fields = "__all__"
 
     def get_class_level(self, obj):
-        class_level = obj.class_level
-        serializer = ClassLevelSerializer(class_level, many=False)
-        return serializer.data["name"]
+        return obj.class_level.name if obj.class_level else None
 
     def get_class_of_year(self, obj):
-        class_of_year = obj.class_of_year
-        serializer = ClassYearSerializer(class_of_year, many=False)
-        return serializer.data["full_name"]
+        return obj.class_of_year.full_name if obj.class_of_year else None
 
     def get_parent_guardian(self, obj):
-        parent_guardian = obj.parent_guardian
-        serializer = ParentSerializer(parent_guardian, many=False)
-        return serializer.data["email"]
+        return obj.parent_guardian.email if obj.parent_guardian else None
 
-    def create(self, validated_data):
-        # Use validated_data instead of request.data for proper validation handling
+    def validate_and_create_student(self, data):
+        """
+        Reusable method to validate and create a student instance.
+        """
+        try:
+            class_level = ClassLevel.objects.get(name__iexact=data.get("class_level"))
+        except ClassLevel.DoesNotExist:
+            raise serializers.ValidationError(
+                f"Class level '{data['class_level']}' does not exist."
+            )
+
+        parent = None
+        if "parent_contact" in data:
+            parent, _ = Parent.objects.get_or_create(
+                phone_number=data["parent_contact"],
+                defaults={
+                    "first_name": data.get("middle_name", "").title(),
+                    "last_name": data.get("last_name", "").title(),
+                    "email": f"parent_of_{data['first_name']}_{data['last_name']}@example.com",
+                },
+            )
+
         student = Student(
-            first_name=validated_data["first_name"],
-            middle_name=validated_data["middle_name"],
-            last_name=validated_data["last_name"],
-            admission_number=validated_data["addmission_number"],
-            parent_contact=validated_data["parent_contact"],
-            region=validated_data["region"],
-            city=validated_data["city"],
-            street=validated_data["street"],
-            class_level=ClassLevel.objects.get(name=data["class_level"]),
-            gender=validated_data["gender"],
-            date_of_birth=validated_data["date_of_birth"],
+            first_name=data["first_name"].title(),
+            middle_name=data.get("middle_name", "").title(),
+            last_name=data["last_name"].title(),
+            admission_number=data["admission_number"],
+            parent_contact=data["parent_contact"],
+            region=data["region"],
+            city=data["city"],
+            street=data.get("street", ""),
+            class_level=class_level,
+            gender=data["gender"],
+            date_of_birth=data.get("date_of_birth", "2000-01-01"),
+            std_vii_number=data.get("std_vii_number", ""),
+            prems_number=data.get("prems_number", ""),
+            parent_guardian=parent,
         )
 
-        # Optional: Handle 'class_of_year' if needed (assuming it's part of the request data)
-        if "class_of_year" in validated_data:
-            student.class_of_year = ClassYear.objects.get(
-                year=validated_data["class_of_year"]
-            )
+        if "class_of_year" in data:
+            try:
+                class_year = ClassYear.objects.get(year=data["class_of_year"])
+                student.class_of_year = class_year
+            except ClassYear.DoesNotExist:
+                raise serializers.ValidationError(
+                    f"Class year '{data['class_of_year']}' does not exist."
+                )
 
         student.save()
         return student
 
+    def create(self, validated_data):
+        """
+        Single student creation using reusable method.
+        """
+        return self.validate_and_create_student(validated_data)
+
     def bulk_create(self, student_data_list):
-        # Assuming student_data_list is a list of dictionaries for bulk creation
-        students = []
+        """
+        Bulk creation of students.
+        """
+        created_students = []
+        errors = []
+
         for data in student_data_list:
-            student = Student(
-                first_name=data["first_name"].lower(),
-                middle_name=data["middle_name"].lower(),
-                last_name=data["last_name"].lower(),
-                admission_number=data["addmission_number"],
-                parent_contact=data["parent_contact"],
-                region=data["region"],
-                city=data["city"],
-                class_level=ClassLevel.objects.get(name=data["class_level"]),
-                gender=data["gender"],
-                date_of_birth=data.get(
-                    "date_of_birth", "2000-01-01"
-                ),  # Default fallback
-            )
+            try:
+                student = self.validate_and_create_student(data)
+                created_students.append(student)
+            except serializers.ValidationError as e:
+                data["error"] = str(e)
+                errors.append(data)  # Collect data with errors for review
 
-            # Optional: Handle 'class_of_year' if needed
-            if "class_of_year" in data:
-                student.class_of_year = ClassYear.objects.get(
-                    year=data["class_of_year"]
-                )
+        return created_students, errors
 
-            student.save()
-            students.append(student)
-
-        return students

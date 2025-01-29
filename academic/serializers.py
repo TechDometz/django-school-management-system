@@ -1,4 +1,7 @@
+from django.contrib.auth.models import Group
 from rest_framework import serializers
+
+from users.models import CustomUser
 
 from .models import (
     ClassYear,
@@ -9,6 +12,9 @@ from .models import (
     Subject,
     Department,
     Stream,
+    ReasonLeft,
+    Parent,
+    StudentClass,
 )
 
 
@@ -59,14 +65,39 @@ class GradeLevelSerializer(serializers.ModelSerializer):
 
 
 class ClassRoomSerializer(serializers.ModelSerializer):
+    name = serializers.SerializerMethodField()
+    stream = serializers.SerializerMethodField()
+    class_teacher = serializers.SerializerMethodField()
+    available_sits = serializers.ReadOnlyField()
+    class_status = serializers.ReadOnlyField()
+
     class Meta:
         model = ClassRoom
         fields = "__all__"
+
+    def get_name(self, obj):
+        return obj.name.name  # Access the name field of the related ClassLevel object
+
+    def get_stream(self, obj):
+        return obj.stream.name  # Access the name field of the related Stream object
+
+    def get_class_teacher(self, obj):
+        return (
+            f"{obj.class_teacher.first_name} {obj.class_teacher.last_name}"
+            if obj.class_teacher
+            else None
+        )
 
 
 class SchoolYearSerializer(serializers.ModelSerializer):
     class Meta:
         model = ClassYear
+        fields = "__all__"
+
+
+class ReasonLeftSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ReasonLeft
         fields = "__all__"
 
 
@@ -82,6 +113,7 @@ class TeacherSerializer(serializers.ModelSerializer):
     class Meta:
         model = Teacher
         fields = [
+            "id",
             "first_name",
             "middle_name",
             "last_name",
@@ -138,3 +170,83 @@ class TeacherSerializer(serializers.ModelSerializer):
         subjects = Subject.objects.filter(name__in=subject_specialization_data)
         teacher.subject_specialization.set(subjects)
         return teacher
+
+
+class ParentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Parent
+        fields = "__all__"
+
+    def validate_email(self, value):
+        if value and Parent.objects.filter(email=value).exists():
+            raise serializers.ValidationError(
+                "A parent with this email already exists."
+            )
+        return value
+
+    def validate_phone_number(self, value):
+        if Parent.objects.filter(phone_number=value).exists():
+            raise serializers.ValidationError(
+                "A parent with this phone number already exists."
+            )
+        return value
+
+    def create(self, validated_data):
+        email = validated_data.get("email", None)
+        first_name = validated_data.get("first_name", "")
+        last_name = validated_data.get("last_name", "")
+
+        # Create the parent object
+        parent = super().create(validated_data)
+
+        # Automatically create a user account for the parent
+        if email:
+            user, created = CustomUser.objects.get_or_create(
+                email=email,
+                defaults={
+                    "first_name": first_name,
+                    "last_name": last_name,
+                    "is_parent": True,
+                },
+            )
+            if created:
+                # Set a default password
+                default_password = f"{first_name.lower()}{last_name.lower()}123"
+                user.set_password(default_password)
+                user.save()
+
+                # Assign to "parent" group
+                group, _ = Group.objects.get_or_create(name="parent")
+                user.groups.add(group)
+
+        return parent
+
+    def update(self, instance, validated_data):
+        # Handle updating the associated CustomUser when parent data is updated
+        email = validated_data.get("email", instance.email)
+        first_name = validated_data.get("first_name", instance.first_name)
+        last_name = validated_data.get("last_name", instance.last_name)
+
+        if email:
+            try:
+                user = CustomUser.objects.get(email=instance.email)
+                user.email = email
+                user.first_name = first_name
+                user.last_name = last_name
+                user.save()
+            except CustomUser.DoesNotExist:
+                pass
+
+        return super().update(instance, validated_data)
+
+
+class StudentClassSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = StudentClass
+        fields = "__all__"
+
+    def validate(self, data):
+        classroom = data.get("classroom")
+        if classroom.occupied_sits >= classroom.capacity:
+            raise serializers.ValidationError("This class is already full.")
+        return data

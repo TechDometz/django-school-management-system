@@ -1,8 +1,10 @@
 import openpyxl
+from django.db.models import Q
 from rest_framework import views
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated, IsAdminUser
 from rest_framework.response import Response
+from rest_framework.pagination import PageNumberPagination
 from rest_framework import status
 from django.http import Http404
 
@@ -10,28 +12,60 @@ from academic.models import Student, ClassLevel, Parent
 from .serializers import StudentSerializer
 
 
-class StudentListView(views.APIView):
+class StudentListView(APIView):
     """
-    List all students, or create a new student.
+    API View for handling single and listing students with pagination and flexible search.
     """
 
-    # permission_classes = [IsAuthenticated]
+    class StudentPagination(PageNumberPagination):
+        page_size = 30  # Default number of students per page
+        page_size_query_param = "page_size"  # Allow clients to specify page size
+        max_page_size = 100  # Maximum allowed page size
+
     def get(self, request, format=None):
+        # Retrieve search query parameters
+        first_name_query = request.query_params.get("first_name", "")
+        middle_name_query = request.query_params.get("middle_name", "")
+        last_name_query = request.query_params.get("last_name", "")
+        class_level_query = request.query_params.get("class_level", "")
+
+        # Start with all students
         students = Student.objects.all()
-        serializer = StudentSerializer(students, many=True)
-        return Response(serializer.data)
+
+        # Apply filters dynamically based on provided query parameters
+        filters = Q()
+        if first_name_query:
+            filters &= Q(first_name__icontains=first_name_query)
+        if middle_name_query:
+            filters &= Q(middle_name__icontains=middle_name_query)
+        if last_name_query:
+            filters &= Q(last_name__icontains=last_name_query)
+        if class_level_query:
+            filters &= Q(class_level__icontains=class_level_query)
+
+        # Apply the combined filters to the queryset
+        if filters:
+            students = students.filter(filters)
+
+        # Paginate the results
+        paginator = self.StudentPagination()
+        paginated_students = paginator.paginate_queryset(students, request)
+        serializer = StudentSerializer(paginated_students, many=True)
+        return paginator.get_paginated_response(serializer.data)
 
     def post(self, request, format=None):
-        serializer = StudentSerializer(data=request.data)
-
-        print(serializer.is_valid())
-        print(request.data)
+        data = request.data
+        serializer = StudentSerializer(data=data)
         if serializer.is_valid():
-            student = serializer.create(request)
-            if student:
-                # serializer.save()
-                return Response(data=student, status=status.HTTP_201_CREATED)
+            student = serializer.save()
+            return Response(
+                StudentSerializer(student).data,
+                status=status.HTTP_201_CREATED,
+            )
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+
 
 
 class StudentDetailView(views.APIView):
@@ -95,6 +129,7 @@ class BulkUploadStudentsView(APIView):
 
             students_to_create = []
             sibling_relationships = []  # To store sibling pairs for linking
+            not_created = []  # List to store rows with errors
 
             for i, row in enumerate(
                 sheet.iter_rows(min_row=2, values_only=True), start=2
@@ -102,54 +137,67 @@ class BulkUploadStudentsView(APIView):
                 # Map row data to the expected columns
                 student_data = dict(zip(columns, row))
 
-                # Validate and prepare the data
                 try:
-                    class_level = ClassLevel.objects.get(
-                        name=student_data["class_level"]
+                    # Validate class level
+                    try:
+                        class_level = ClassLevel.objects.get(
+                            name=student_data["class_level"]
+                        )
+                    except ClassLevel.DoesNotExist:
+                        raise ValueError(
+                            f"Class level '{student_data['class_level']}' does not exist."
+                        )
+
+                    # Handle parent relationship
+                    parent_contact = student_data["parent_contact"]
+                    parent = None
+                    if parent_contact:
+                        parent, _ = Parent.objects.get_or_create(
+                            phone_number=parent_contact,
+                            defaults={
+                                "first_name": student_data["middle_name"],
+                                "last_name": student_data["last_name"],
+                                "email": f"parent_of_{student_data['first_name']}_{student_data['last_name']}@hayatul.com",
+                            },
+                        )
+
+                    # Check for existing siblings
+                    existing_sibling = Student.objects.filter(
+                        parent_contact=parent_contact
+                    ).first()
+
+                    # Check for duplicate admission number
+                    if Student.objects.filter(
+                        admission_number=student_data["admission_number"]
+                    ).exists():
+                        raise ValueError(
+                            f"Admission number '{student_data['admission_number']}' already exists."
+                        )
+
+                    # Prepare the student instance
+                    student = Student(
+                        first_name=student_data["first_name"],
+                        middle_name=student_data["middle_name"],
+                        last_name=student_data["last_name"],
+                        admission_number=student_data["admission_number"],
+                        parent_contact=parent_contact,
+                        region=student_data["region"],
+                        city=student_data["city"],
+                        class_level=class_level,
+                        gender=student_data["gender"],
+                        date_of_birth=student_data["date_of_birth"],
+                        parent_guardian=parent,  # Assign the parent to the student
                     )
-                except ClassLevel.DoesNotExist as e:
-                    return Response(
-                        {"error": f"Row {i}: {str(e)}"},
-                        status=status.HTTP_400_BAD_REQUEST,
-                    )
+                    students_to_create.append(student)
 
-                # Handle parent relationship
-                parent_contact = student_data["parent_contact"]
-                parent = None
-                if parent_contact:
-                    parent, _ = Parent.objects.get_or_create(
-                        phone_number=parent_contact,
-                        defaults={
-                            "first_name": student_data["middle_name"],
-                            "last_name": student_data["last_name"],
-                            "email": f"parent_of_{student_data['first_name']}_{student_data['last_name']}@hayatul.com",
-                        },
-                    )
+                    # Store sibling relationships for later processing
+                    if existing_sibling:
+                        sibling_relationships.append((student, existing_sibling))
 
-                # Check for existing siblings
-                existing_sibling = Student.objects.filter(
-                    parent_contact=parent_contact
-                ).first()
-
-                # Prepare the student instance
-                student = Student(
-                    first_name=student_data["first_name"],
-                    middle_name=student_data["middle_name"],
-                    last_name=student_data["last_name"],
-                    admission_number=student_data["admission_number"],
-                    parent_contact=parent_contact,
-                    region=student_data["region"],
-                    city=student_data["city"],
-                    class_level=class_level,
-                    gender=student_data["gender"],
-                    date_of_birth=student_data["date_of_birth"],
-                    parent_guardian=parent,  # Assign the parent to the student
-                )
-                students_to_create.append(student)
-
-                # Store sibling relationships for later processing
-                if existing_sibling:
-                    sibling_relationships.append((student, existing_sibling))
+                except Exception as e:
+                    # Add row data and error message to the not_created list
+                    student_data["error"] = str(e)
+                    not_created.append(student_data)
 
             # Bulk create students
             Student.objects.bulk_create(students_to_create)
@@ -161,7 +209,8 @@ class BulkUploadStudentsView(APIView):
 
             return Response(
                 {
-                    "message": f"{len(students_to_create)} students successfully uploaded."
+                    "message": f"{len(students_to_create)} students successfully uploaded.",
+                    "not_created": not_created,
                 },
                 status=status.HTTP_201_CREATED,
             )

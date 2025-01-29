@@ -48,7 +48,6 @@ class UserSerializer(serializers.ModelSerializer):
 
 class UserSerializerWithToken(UserSerializer):
     token = serializers.SerializerMethodField(read_only=True)
-    user_type = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = CustomUser
@@ -60,7 +59,9 @@ class UserSerializerWithToken(UserSerializer):
             "middle_name",
             "last_name",
             "isAdmin",
-            "user_type",
+            "isTeacher",
+            "isAccountant",
+            "isParent",
             "token",
         ]
 
@@ -71,12 +72,6 @@ class UserSerializerWithToken(UserSerializer):
         except Exception as e:
             return None
 
-    def get_user_type(self, obj):
-        roles = ["is_accountant", "is_teacher", "is_parent"]
-        for role in roles:
-            if getattr(obj, role, False):
-                return {role: True}
-        return {"unknown": True}
 
 
 class AccountantSerializer(serializers.ModelSerializer):

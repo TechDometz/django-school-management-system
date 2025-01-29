@@ -9,6 +9,7 @@ from django.utils.crypto import get_random_string
 from django.utils import timezone
 from users.models import CustomUser
 from administration.models import AcademicYear, Term
+
 from .validators import *
 from administration.common_objs import *
 
@@ -60,6 +61,13 @@ class Subject(models.Model):
 
 
 class Teacher(models.Model):
+    user = models.OneToOneField(
+        CustomUser,
+        on_delete=models.CASCADE,
+        related_name="accountant",
+        null=True,
+        blank=True,
+    )
     username = models.CharField(unique=True, max_length=250, blank=True)
     first_name = models.CharField(max_length=300, blank=True)
     middle_name = models.CharField(max_length=100, blank=True)
@@ -94,31 +102,37 @@ class Teacher(models.Model):
         return self.inactive
 
     def save(self, *args, **kwargs):
+        """
+        When an accountant is created, generate a CustomUser instance for login.
+        """
         # Generate unique username
         if not self.username:
             self.username = f"{self.first_name.lower()}{self.last_name.lower()}{get_random_string(4)}"
-        self.email = f"{self.first_name}.{self.last_name}@hayatul.com"
 
-        # Create corresponding user
-        super().save(*args, **kwargs)
-        user, created = CustomUser.objects.get_or_create(
-            email=self.email,
-            defaults={
-                "first_name": self.first_name,
-                "last_name": self.last_name,
-                "is_teacher": self.isTeacher,
-            },
-        )
-        if created:
+        if not self.user:
+            # Create the user if it doesn't exist
+            user = CustomUser.objects.create(
+                first_name=self.first_name,
+                last_name=self.last_name,
+                email=self.email,
+                is_teacher=True,
+            )
+
+            # Set a default password using empId (if available) or fallback
             default_password = f"Complex.{self.empId[-4:] if self.empId and len(self.empId) >= 4 else '0000'}"
             user.set_password(default_password)
             user.save()
 
-            # Add to "teacher" group
+            # Attach the created user to the teacher
+            self.user = user
+
+            # Add user to "teacher" group
             group, _ = Group.objects.get_or_create(name="teacher")
             user.groups.add(group)
 
-            # Optionally send email (integrate email backend here)
+        super().save(*args, **kwargs)
+
+        # Optionally send email (integrate email backend here)
 
     def update_unpaid_salary(self):
         # Update unpaid salary at the start of each month
@@ -185,6 +199,10 @@ class Stream(models.Model):
     def __str__(self):
         return self.name
 
+    def save(self, *args, **kwargs):
+        self.name = self.name.upper()
+        super().save(*args, **kwargs)
+
 
 class ClassRoom(models.Model):
     name = models.ForeignKey(
@@ -219,14 +237,15 @@ class ClassRoom(models.Model):
             raise ValidationError("Occupied sits cannot exceed the capacity.")
 
     def save(self, *args, **kwargs):
+
         self.clean()
         super().save(*args, **kwargs)
 
 
 class Topic(models.Model):
     name = models.CharField(max_length=255, blank=True, null=True)
-    class_room = models.ForeignKey(
-        ClassRoom, on_delete=models.CASCADE, blank=True, null=True
+    class_level = models.ForeignKey(
+        ClassLevel, on_delete=models.CASCADE, blank=True, null=True
     )
     subject = models.ForeignKey(
         Subject, on_delete=models.CASCADE, blank=True, null=True
@@ -304,6 +323,9 @@ class Parent(models.Model):
     image = models.ImageField(upload_to="Parent_images", blank=True)
     inactive = models.BooleanField(default=False)
 
+    class Meta:
+        ordering = ["email", "first_name", "last_name"]
+
     def __str__(self):
         return f"{self.first_name} {self.last_name} ({self.email})"
 
@@ -371,6 +393,9 @@ class Student(models.Model):
     )
     debt = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal("0.00"))
 
+    class Meta:
+        ordering = ["last_name", "first_name", "admission_number"]
+
     def __str__(self):
         return f"{self.admission_number} - {self.first_name} {self.last_name} - Debt: {self.debt}"
 
@@ -408,6 +433,9 @@ class Student(models.Model):
             .exclude(id=self.id)
             .first()
         )
+        self.first_name = self.first_name.lower()
+        self.middle_name = self.middle_name.lower()
+        self.last_name = self.last_name.lower()
         super().save(*args, **kwargs)
 
         if existing_sibling:
@@ -461,36 +489,114 @@ class Student(models.Model):
 
 class StudentClass(models.Model):
     """
-    This is a bridge table to link a student to a class.
-    When you add a student to a class, we update the selected class capacity.
+    Bridge table to link a student to a class.
+    Updates the selected class capacity when a student is added or removed.
     """
 
     classroom = models.ForeignKey(
-        ClassRoom, on_delete=models.CASCADE, related_name="class_student"
+        ClassRoom, on_delete=models.CASCADE, related_name="class_students"
     )
     academic_year = models.ForeignKey(AcademicYear, on_delete=models.CASCADE)
-    student_id = models.ForeignKey(
-        Student, on_delete=models.CASCADE, related_name="student_class"
+    student = models.ForeignKey(
+        Student,
+        on_delete=models.CASCADE,
+        related_name="student_classes",
+        blank=True,
+        null=True,
     )
 
     @property
     def is_current_class(self):
-        # Check if the class belongs to the current academic session
         return self.academic_year.is_current_session
 
     def __str__(self):
-        return str(self.student_id)
+        return f"Student: {self.student}, Class: {self.classroom}"
 
-    def update_class_table(self):
-        selected_class = ClassRoom.objects.get(pk=self.classroom.pk)
-        # Using F() expression for atomic update of occupied_sits
-        selected_class.occupied_sits = F("occupied_sits") + 1
-        selected_class.save()
+    def clean(self):
+        """
+        Perform custom validations:
+        - Ensure the classroom matches the student's class level.
+        - Check if the classroom has available seats.
+        - Prevent duplicate assignments for the same student and academic year.
+        """
+        # Validate that the classroom matches the student's class level
+        if self.classroom.name != self.student.class_level:
+            raise ValidationError(
+                f"The classroom '{self.classroom.name}' does not match the student's class level '{self.student.class_level}'."
+            )
+
+        # Validate that the classroom has available seats
+        if not self.pk and self.classroom.occupied_sits >= self.classroom.capacity:
+            raise ValidationError(
+                f"The classroom '{self.classroom}' has reached its maximum capacity."
+            )
+
+        # Check for duplicate StudentClass assignments
+        if (
+            StudentClass.objects.filter(
+                classroom=self.classroom,
+                academic_year=self.academic_year,
+                student=self.student,
+            )
+            .exclude(pk=self.pk)
+            .exists()
+        ):
+            raise ValidationError(
+                f"The student '{self.student}' is already assigned to this class for the academic year '{self.academic_year}'."
+            )
+
+    def update_class_table(self, increment=True):
+        """
+        Updates the `occupied_sits` count in the classroom manually within a transaction.
+        """
+        # Use a transaction to ensure consistency
+        with transaction.atomic():
+            selected_class = ClassRoom.objects.select_for_update().get(
+                pk=self.classroom.pk
+            )
+
+            if increment:
+                # Check capacity before incrementing
+                if selected_class.occupied_sits >= selected_class.capacity:
+                    raise ValidationError(
+                        "This class has reached its maximum capacity."
+                    )
+                selected_class.occupied_sits += 1
+            else:
+                # Ensure occupied_sits doesn't go below zero
+                if selected_class.occupied_sits <= 0:
+                    raise ValidationError("Cannot have negative occupied sits.")
+                selected_class.occupied_sits -= 1
+
+            # Save the updated classroom instance
+            selected_class.save()
 
     def save(self, *args, **kwargs):
-        # Update class sits before saving the StudentClass
-        self.update_class_table()
+        """
+        Override the save method to:
+        - Validate before saving.
+        - Update the classroom's capacity on creation.
+        """
+        if not self.pk:  # Only increment capacity on creation
+            self.update_class_table(increment=True)
         super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        """
+        Override the delete method to:
+        - Decrement the classroom's capacity when a record is deleted.
+        """
+        self.update_class_table(increment=False)
+        super().delete(*args, **kwargs)
+
+    def delete_queryset(self, request, queryset):
+        """
+        Override the bulk delete behavior to update `occupied_sits` correctly.
+        """
+        with transaction.atomic():  # Ensure the operation is transactional
+            for instance in queryset:
+                instance.update_class_table(increment=False)  # Decrement capacity
+            queryset.delete()  # Perform the actual deletion
 
 
 class StudentsMedicalHistory(models.Model):

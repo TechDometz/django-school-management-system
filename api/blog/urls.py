@@ -1,9 +1,26 @@
-from django.urls import path, include
-from api.views import (
-        ArticleListView, ArticleDetailView
+from django.urls import path
+
+from administration.views import (
+    ArticleListCreateView,
+    ArticleDetailView,
+    CarouselImageListCreateView,
+    CarouselImageDetailView,
 )
 
+
 urlpatterns = [
-    path('articles/', ArticleListView.as_view(), name="articles-list"),
-    path('articles/<int:pk>/', ArticleDetailView.as_view(), name="article-detail"),
+    # Article URLs
+    path("articles/", ArticleListCreateView.as_view(), name="article-list-create"),
+    path("articles/<int:pk>/", ArticleDetailView.as_view(), name="article-detail"),
+    # Carousel Image URLs
+    path(
+        "carousel-images/",
+        CarouselImageListCreateView.as_view(),
+        name="carousel-image-list-create",
+    ),
+    path(
+        "carousel-images/<int:pk>/",
+        CarouselImageDetailView.as_view(),
+        name="carousel-image-detail",
+    ),
 ]

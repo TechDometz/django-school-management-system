@@ -33,11 +33,21 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
 
     objects = CustomUserManager()
 
+    class Meta:
+        ordering = ["email"]
+
     def __str__(self):
         return self.email
 
 
 class Accountant(models.Model):
+    user = models.OneToOneField(
+        CustomUser,
+        on_delete=models.CASCADE,
+        related_name="accountant",
+        null=True,
+        blank=True,
+    )
     username = models.CharField(unique=True, max_length=250, blank=True)
     first_name = models.CharField(max_length=300, blank=True)
     middle_name = models.CharField(max_length=100, blank=True)
@@ -59,7 +69,6 @@ class Accountant(models.Model):
     )
     date_of_birth = models.DateField(blank=True, null=True)
     image = models.ImageField(upload_to="Employee_images", blank=True, null=True)
-    isAccountant = models.BooleanField(default=True)
     inactive = models.BooleanField(default=False)
 
     class Meta:
@@ -73,30 +82,35 @@ class Accountant(models.Model):
         return self.inactive
 
     def save(self, *args, **kwargs):
+        """
+        When an accountant is created, generate a CustomUser instance for login.
+        """
         # Generate unique username
         if not self.username:
             self.username = f"{self.first_name.lower()}{self.last_name.lower()}{get_random_string(4)}"
 
-        # Create corresponding user
-        super().save(*args, **kwargs)
-        user, created = CustomUser.objects.get_or_create(
-            email=self.email,
-            defaults={
-                "first_name": self.first_name,
-                "last_name": self.last_name,
-                "is_accountant": self.isAccountant,
-            },
-        )
-        if created:
+        if not self.user:
+            # Create the user if it doesn't exist
+            user = CustomUser.objects.create(
+                first_name=self.first_name,
+                last_name=self.last_name,
+                email=self.email,
+                is_accountant=True,
+            )
+
+            # Set a default password using empId (if available) or fallback
             default_password = f"Complex.{self.empId[-4:] if self.empId and len(self.empId) >= 4 else '0000'}"
             user.set_password(default_password)
             user.save()
 
-            # Add to "accountant" group
+            # Attach the created user to the accountant
+            self.user = user
+
+            # Add user to "accountant" group
             group, _ = Group.objects.get_or_create(name="accountant")
             user.groups.add(group)
 
-            # Optionally send email (integrate email backend here)
+        super().save(*args, **kwargs)
 
     def update_unpaid_salary(self):
         # Update unpaid salary at the start of each month
