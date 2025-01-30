@@ -348,14 +348,14 @@ class BulkUploadTeachersView(APIView):
                     teacher = Teacher(
                         first_name=teacher_data["first_name"].lower(),
                         middle_name=teacher_data["middle_name"].lower(),
-                        last_name=teacher_data["last_name"].lower,
+                        last_name=teacher_data["last_name"].lower(),
                         email=generated_email,
                         short_name=teacher_data["short_name"].upper(),
                         phone_number=teacher_data["phone_number"],
                         empId=teacher_data["employment_id"],
-                        address=teacher_data["address"].lower,
+                        address=teacher_data["address"].lower(),
                         gender=teacher_data["gender"],
-                        date_of_birth=teacher_data["date_of_birth", "1990-01-01"],
+                        date_of_birth=teacher_data["date_of_birth"],
                         salary=teacher_data["salary"],
                     )
                     teacher.save()

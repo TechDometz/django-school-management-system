@@ -103,7 +103,7 @@ class Teacher(models.Model):
 
     def save(self, *args, **kwargs):
         """
-        When an accountant is created, generate a CustomUser instance for login.
+        When an teacher is created, generate a CustomUser instance for login.
         """
         # Generate unique username
         if not self.username:
