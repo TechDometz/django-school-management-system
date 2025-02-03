@@ -7,14 +7,14 @@ from users.views import (
     UserDetailView,
     ParentListView,
     ParentDetailView,
-    AccountantViewSet,
+    AccountantListView,
+    AccountantDetailView,
     TeacherViewSet,
     BulkUploadTeachersView,
 )
 
 # Initialize the router
 router = DefaultRouter()
-router.register(r"accountants", AccountantViewSet, basename="accountant")
 router.register(r"teachers", TeacherViewSet, basename="teacher")
 
 urlpatterns = [
@@ -23,6 +23,9 @@ urlpatterns = [
     path("users/", UserListView.as_view(), name="users-list"),
     path("users/<int:pk>/", UserDetailView.as_view(), name="user-detail"),
     path("teachers/bulk-upload/", BulkUploadTeachersView.as_view()),
+    # Accountant URLs
+    path("accountants/", AccountantListView.as_view(), name="accountant-list-create"),
+    path("accountants/<int:pk>/", AccountantDetailView.as_view(), name="accountant-detail"),
     # Parent URLs
     path("parents/", ParentListView.as_view(), name="parent-list-create"),
     path("parents/<int:pk>/", ParentDetailView.as_view(), name="parent-detail"),

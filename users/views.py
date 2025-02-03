@@ -67,11 +67,16 @@ class UserListView(APIView):
         if filters:
             users = users.filter(filters)
 
+        '''
         # Paginate the results
         paginator = self.UserPagination()
         paginated_users = paginator.paginate_queryset(users, request)
         serializer = UserSerializer(paginated_users, many=True)
         return paginator.get_paginated_response(serializer.data)
+        '''
+        
+        serializer = UserSerializer(users, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
     def post(self, request, format=None):
         data = request.data
@@ -113,41 +118,65 @@ class UserDetailView(views.APIView):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
-# Accountant Views
-class AccountantViewSet(viewsets.ModelViewSet):
-    queryset = Accountant.objects.all()
-    serializer_class = AccountantSerializer
+
+class AccountantListView(APIView):
+    """
+    API View for handling single and listing accountants.
+    """
+
+    def get(self, request, format=None):
+        accountants = Accountant.objects.all()
+        serializer = AccountantSerializer(accountants, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def post(self, request, format=None):
+        serializer = AccountantSerializer(data=request.data)
+        if serializer.is_valid():
+            accountant = serializer.save()
+            return Response(
+                AccountantSerializer(accountant).data, status=status.HTTP_201_CREATED
+            )
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class AccountantDetailView(views.APIView):
     permission_classes = [IsAuthenticated]
 
-    def get_permissions(self):
-        """
-        Override this method if you want to apply different permissions for different actions.
-        """
-        permissions = super().get_permissions()
+    def get_object(self, pk):
+        return get_object_or_404(Parent, pk=pk)
 
-        if self.action in ["update", "partial_update", "destroy"]:
-            # Only admins can update or delete teachers
-            permissions = [IsAdminUser()]
-        return permissions
-
-    def retrieve(self, request, pk=None):
-        accountant = get_object_or_404(Accountant, pk=pk)
-        serializer = self.get_serializer(accountant)
+    def get(self, request, pk, format=None):
+        accountant = self.get_object(pk)
+        serializer = AccountantSerializer(accountant)
         return Response(serializer.data)
 
-    def update(self, request, pk=None):
-        accountant = get_object_or_404(Accountant, pk=pk)
-        serializer = self.get_serializer(accountant, data=request.data)
+    def put(self, request, pk, format=None):
+        accountant = self.get_object(pk)
+        serializer = AccountantSerializer(accountant, data=request.data)
         if serializer.is_valid():
-            serializer.save()
+            updated_parent = serializer.save()
+
+            # Update the linked CustomUser when accountant details change
+            email = updated_parent.email
+            first_name = updated_parent.first_name
+            last_name = updated_parent.last_name
+
+            try:
+                user = User.objects.get(email=accountant.email)
+                user.email = email
+                user.first_name = first_name
+                user.last_name = last_name
+                user.save()
+            except User.DoesNotExist:
+                pass  # If user does not exist, no update is needed
+
             return Response(serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-    def destroy(self, request, pk=None):
-        accountant = get_object_or_404(Accountant, pk=pk)
+    def delete(self, request, pk, format=None):
+        accountant = self.get_object(pk)
         accountant.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
-
 
 class ParentListView(APIView):
     """
@@ -176,10 +205,8 @@ class ParentListView(APIView):
         if filters:
             parents = parents.filter(filters)
 
-        paginator = self.ParentPagination()
-        paginated_parents = paginator.paginate_queryset(parents, request)
-        serializer = ParentSerializer(paginated_parents, many=True)
-        return paginator.get_paginated_response(serializer.data)
+        serializer = ParentSerializer(parents, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
     def post(self, request, format=None):
         serializer = ParentSerializer(data=request.data)
@@ -255,7 +282,10 @@ class TeacherViewSet(viewsets.ModelViewSet):
 
     def update(self, request, pk=None):
         teacher = get_object_or_404(Teacher, pk=pk)
+        print(teacher)
+        print(request.data)
         serializer = self.get_serializer(teacher, data=request.data)
+        print(serializer.is_valid())
         if serializer.is_valid():
             serializer.save()
             return Response(serializer.data)

@@ -6,6 +6,7 @@ from academic.models import Teacher, Subject, Parent
 from .models import CustomUser, Accountant
 
 
+
 class UserSerializer(serializers.ModelSerializer):
     username = serializers.SerializerMethodField(read_only=True)
     isAdmin = serializers.SerializerMethodField(read_only=True)
@@ -92,12 +93,14 @@ class AccountantSerializer(serializers.ModelSerializer):
 
 
 class TeacherSerializer(serializers.ModelSerializer):
+    from finance.serializers import PaymentSerializer
     subject_specialization = serializers.ListField(
         child=serializers.CharField(), write_only=True, required=True
     )
     subject_specialization_display = serializers.StringRelatedField(
         many=True, source="subject_specialization", read_only=True
     )
+    payments = PaymentSerializer(many=True, read_only=True, source="payment_set")  # Assuming a ForeignKey from Payment to Teacher
 
     class Meta:
         model = Teacher
@@ -116,6 +119,7 @@ class TeacherSerializer(serializers.ModelSerializer):
             "gender",
             "date_of_birth",
             "salary",
+            "payments",
         ]
 
     def validate_email(self, value):
