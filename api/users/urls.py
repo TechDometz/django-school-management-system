@@ -9,26 +9,26 @@ from users.views import (
     ParentDetailView,
     AccountantListView,
     AccountantDetailView,
-    TeacherViewSet,
+    TeacherListView,
+    TeacherDetailView,
     BulkUploadTeachersView,
 )
 
-# Initialize the router
-router = DefaultRouter()
-router.register(r"teachers", TeacherViewSet, basename="teacher")
 
 urlpatterns = [
     # JWT Token endpoint
     path("login/", MyTokenObtainPairView.as_view(), name="token_obtain_pair"),
     path("users/", UserListView.as_view(), name="users-list"),
     path("users/<int:pk>/", UserDetailView.as_view(), name="user-detail"),
-    path("teachers/bulk-upload/", BulkUploadTeachersView.as_view()),
+    # teacher URLs
+    path("teachers/", TeacherListView.as_view(), name="teacher-list-create"),
+    path("teachers/bulk-upload/", BulkUploadTeachersView.as_view(), name="teacher-bulk-upload"),
+    path("teachers/<int:pk>/", TeacherDetailView.as_view(), name="accountant-detail"),
     # Accountant URLs
     path("accountants/", AccountantListView.as_view(), name="accountant-list-create"),
     path("accountants/<int:pk>/", AccountantDetailView.as_view(), name="accountant-detail"),
     # Parent URLs
     path("parents/", ParentListView.as_view(), name="parent-list-create"),
     path("parents/<int:pk>/", ParentDetailView.as_view(), name="parent-detail"),
-    # Include ViewSet routes
-    path("", include(router.urls)),
+  
 ]

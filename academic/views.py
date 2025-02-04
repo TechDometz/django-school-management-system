@@ -114,7 +114,15 @@ class StreamDetailView(generics.RetrieveUpdateDestroyAPIView):
 class SubjectListView(generics.ListCreateAPIView):
     queryset = Subject.objects.all()
     serializer_class = SubjectSerializer
+    permission_classes = [IsAuthenticated]
 
+class SubjectDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """
+    API view to retrieve, update, or delete a subject.
+    """
+    queryset = Subject.objects.all()
+    serializer_class = SubjectSerializer
+    lookup_field = "id"  # You can change this to "subject_code" if needed
 
 class BulkUploadSubjectsView(APIView):
     """

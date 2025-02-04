@@ -87,25 +87,71 @@ class UserSerializerWithToken(UserSerializer):
 
 
 class AccountantSerializer(serializers.ModelSerializer):
+    payments = serializers.SerializerMethodField()
+
     class Meta:
         model = Accountant
-        fields = "__all__"
+        fields = [
+            "id",
+            "username",
+            "first_name",
+            "middle_name",
+            "last_name",
+            "email",
+            "phone_number",
+            "empId",
+            "address",
+            "gender",
+            "national_id",
+            "nssf_number",
+            "tin_number",
+            "date_of_birth",
+            "salary",
+            "unpaid_salary",
+            "payments",
+        ]
+
+    def get_payments(self, obj):
+        """Lazy import to avoid circular import issue"""
+        from finance.serializers import PaymentSerializer  # Import inside method
+
+        if obj.user:
+            payments = obj.user.payments.all()
+            return PaymentSerializer(payments, many=True).data
+        return []
+
+    def validate_email(self, value):
+        request = self.context.get("request", None)
+        accountant_id = self.instance.id if self.instance else None  # Get accountant ID if updating
+        
+        if Accountant.objects.filter(email=value).exclude(id=accountant_id).exists():
+            raise serializers.ValidationError("A accountant with this email already exists.")
+        
+        return value
+
+    def validate_phone_number(self, value):
+        accountant_id = self.instance.id if self.instance else None  # Get accountant ID if updating
+
+        if Accountant.objects.filter(phone_number=value).exclude(id=accountant_id).exists():
+            raise serializers.ValidationError("A accountant with this phone number already exists.")
+        
+        return value
 
 
 class TeacherSerializer(serializers.ModelSerializer):
-    from finance.serializers import PaymentSerializer
     subject_specialization = serializers.ListField(
         child=serializers.CharField(), write_only=True, required=True
     )
     subject_specialization_display = serializers.StringRelatedField(
         many=True, source="subject_specialization", read_only=True
     )
-    payments = PaymentSerializer(many=True, read_only=True, source="payment_set")  # Assuming a ForeignKey from Payment to Teacher
+    payments = serializers.SerializerMethodField()
 
     class Meta:
         model = Teacher
         fields = [
             "id",
+            "username",
             "first_name",
             "middle_name",
             "last_name",
@@ -117,33 +163,66 @@ class TeacherSerializer(serializers.ModelSerializer):
             "subject_specialization_display",
             "address",
             "gender",
+            "national_id",
+            "nssf_number",
+            "tin_number",
             "date_of_birth",
             "salary",
+            "unpaid_salary",
             "payments",
         ]
 
+    def get_payments(self, obj):
+        """Lazy import to avoid circular import issue"""
+        from finance.serializers import PaymentSerializer  # Import inside method
+
+        if obj.user:
+            payments = obj.user.payments.all()
+            return PaymentSerializer(payments, many=True).data
+        return []
+
     def validate_email(self, value):
-        if Teacher.objects.filter(email=value).exists():
-            raise serializers.ValidationError(
-                "A teacher with this email already exists."
-            )
+        request = self.context.get("request", None)
+        teacher_id = self.instance.id if self.instance else None  # Get teacher ID if updating
+        
+        if Teacher.objects.filter(email=value).exclude(id=teacher_id).exists():
+            raise serializers.ValidationError("A teacher with this email already exists.")
+        
         return value
 
     def validate_phone_number(self, value):
-        if Teacher.objects.filter(phone_number=value).exists():
-            raise serializers.ValidationError(
-                "A teacher with this phone number already exists."
-            )
+        teacher_id = self.instance.id if self.instance else None  # Get teacher ID if updating
+
+        if Teacher.objects.filter(phone_number=value).exclude(id=teacher_id).exists():
+            raise serializers.ValidationError("A teacher with this phone number already exists.")
+        
         return value
 
+
     def validate_subject_specialization(self, value):
-        subjects = Subject.objects.filter(name__in=value).distinct()
-        if len(subjects) != len(value):
-            missing_subjects = set(value) - set(subjects.values_list("name", flat=True))
+        """
+        Validate that all subject names in the input exist in the database.
+        Ensure it works for both create and update operations.
+        """
+        if not isinstance(value, list):
+            raise serializers.ValidationError("Subject specialization should be a list of subject names.")
+
+        # Get existing subjects matching the provided names
+        existing_subjects = Subject.objects.filter(name__in=value).distinct()
+
+        # Extract names of found subjects
+        existing_subject_names = set(existing_subjects.values_list("name", flat=True))
+
+        # Identify missing subjects
+        missing_subjects = set(value) - existing_subject_names
+
+        if missing_subjects:
             raise serializers.ValidationError(
                 f"The following subjects do not exist: {', '.join(missing_subjects)}"
             )
-        return value
+
+        return existing_subjects  # Return the queryset instead of a list of names
+
 
     def create(self, validated_data):
         subject_specialization_data = validated_data.pop("subject_specialization")

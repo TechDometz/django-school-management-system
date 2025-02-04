@@ -6,6 +6,7 @@ from rest_framework import viewsets, views
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated, IsAdminUser
 from rest_framework.pagination import PageNumberPagination
+from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework_simplejwt.views import TokenObtainPairView
@@ -143,7 +144,7 @@ class AccountantDetailView(views.APIView):
     permission_classes = [IsAuthenticated]
 
     def get_object(self, pk):
-        return get_object_or_404(Parent, pk=pk)
+        return get_object_or_404(Accountant, pk=pk)
 
     def get(self, request, pk, format=None):
         accountant = self.get_object(pk)
@@ -154,12 +155,12 @@ class AccountantDetailView(views.APIView):
         accountant = self.get_object(pk)
         serializer = AccountantSerializer(accountant, data=request.data)
         if serializer.is_valid():
-            updated_parent = serializer.save()
+            updated_accountant = serializer.save()
 
             # Update the linked CustomUser when accountant details change
-            email = updated_parent.email
-            first_name = updated_parent.first_name
-            last_name = updated_parent.last_name
+            email = updated_accountant.email
+            first_name = updated_accountant.first_name
+            last_name = updated_accountant.last_name
 
             try:
                 user = User.objects.get(email=accountant.email)
@@ -259,48 +260,91 @@ class ParentDetailView(views.APIView):
 
 
 # Teacher Views
-class TeacherViewSet(viewsets.ModelViewSet):
-    queryset = Teacher.objects.all()
-    serializer_class = TeacherSerializer
+class TeacherListView(APIView):
+    """
+    API View for handling single and listing teachers with pagination and flexible search.
+    """
+
+    class TeacherPagination(PageNumberPagination):
+        page_size = 30  # Default number of teachers per page
+        page_size_query_param = "page_size"  # Allow clients to specify page size
+        max_page_size = 100  # Maximum allowed page size
+
+    def get(self, request, format=None):
+        first_name_query = request.query_params.get("first_name", "")
+        last_name_query = request.query_params.get("last_name", "")
+        email_query = request.query_params.get("email", "")
+
+        teachers = Teacher.objects.all()
+        filters = Q()
+        if first_name_query:
+            filters &= Q(first_name__icontains=first_name_query)
+        if last_name_query:
+            filters &= Q(last_name__icontains=last_name_query)
+        if email_query:
+            filters &= Q(email__icontains=email_query)
+
+        if filters:
+            teachers = teachers.filter(filters)
+
+        serializer = TeacherSerializer(teachers, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def post(self, request, format=None):
+        serializer = TeacherSerializer(data=request.data)
+        print(request.data)
+        if serializer.is_valid():
+            teacher = serializer.save()
+            return Response(
+                TeacherSerializer(teacher).data, status=status.HTTP_201_CREATED
+            )
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class TeacherDetailView(views.APIView):
     permission_classes = [IsAuthenticated]
 
-    def get_permissions(self):
-        """
-        Override this method if you want to apply different permissions for different actions.
-        """
-        permissions = super().get_permissions()
+    def get_object(self, pk):
+        return get_object_or_404(Teacher, pk=pk)
 
-        if self.action in ["update", "partial_update", "destroy"]:
-            # Only admins can update or delete teachers
-            permissions = [IsAdminUser()]
-        return permissions
-
-    def retrieve(self, request, pk=None):
-        teacher = get_object_or_404(Teacher, pk=pk)
-        serializer = self.get_serializer(teacher)
+    def get(self, request, pk, format=None):
+        teacher = self.get_object(pk)
+        serializer = TeacherSerializer(teacher)
         return Response(serializer.data)
 
-    def update(self, request, pk=None):
-        teacher = get_object_or_404(Teacher, pk=pk)
-        print(teacher)
-        print(request.data)
-        serializer = self.get_serializer(teacher, data=request.data)
-        print(serializer.is_valid())
+    def put(self, request, pk, format=None):
+        teacher = self.get_object(pk)
+        serializer = TeacherSerializer(teacher, data=request.data)
         if serializer.is_valid():
-            serializer.save()
+            updated_teacher = serializer.save()
+
+            # Update the linked CustomUser when teacher details change
+            email = updated_teacher.email
+            first_name = updated_teacher.first_name
+            last_name = updated_teacher.last_name
+
+            try:
+                user = User.objects.get(email=teacher.email)
+                user.email = email
+                user.first_name = first_name
+                user.last_name = last_name
+                user.save()
+            except User.DoesNotExist:
+                pass  # If user does not exist, no update is needed
+
             return Response(serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-    def destroy(self, request, pk=None):
-        teacher = get_object_or_404(Teacher, pk=pk)
+    def delete(self, request, pk, format=None):
+        teacher = self.get_object(pk)
         teacher.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
-
 
 class BulkUploadTeachersView(APIView):
     """
     API View to handle bulk uploading of teachers from an Excel file.
     """
+    parser_classes = (MultiPartParser, FormParser)
 
     def post(self, request, *args, **kwargs):
         file = request.FILES.get("file")

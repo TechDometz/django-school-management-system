@@ -1,6 +1,7 @@
 from django.urls import path
 from academic.views import (
     SubjectListView,
+    SubjectDetailView,
     BulkUploadSubjectsView,
     ClassRoomView,
     BulkUploadClassRoomsView,
@@ -78,6 +79,7 @@ urlpatterns = [
     path("streams/", StreamListCreateView.as_view(), name="stream-list-create"),
     path("streams/<int:pk>/", StreamDetailView.as_view(), name="stream-detail"),
     path("subjects/", SubjectListView.as_view(), name="subject-list"),
+    path("subjects/<int:id>/", SubjectDetailView.as_view(), name="subject-detail"),
     path(
         "subjects/bulk-upload/",
         BulkUploadSubjectsView.as_view(),

@@ -70,7 +70,7 @@ class Payment(models.Model):
     payment_no = models.IntegerField(unique=True)
     date = models.DateField(auto_now_add=True)
     paid_to = models.CharField(max_length=255, null=True)
-    user = models.ForeignKey(User, blank=True, null=True, on_delete=models.SET_NULL)
+    user = models.ForeignKey(User, blank=True, null=True, on_delete=models.SET_NULL, related_name="payments")
     paid_for = models.ForeignKey(
         PaymentAllocation, on_delete=models.SET_NULL, null=True
     )
@@ -90,7 +90,7 @@ class Payment(models.Model):
     def handle_salary_payment(self):
         # If paid_to is a teacher, reduce their unpaid salary
         if (
-            self.paid_for.name == "Salary Payment"
+            self.paid_for.name.lower() == "salary"
         ):  # Assuming you track salary payment allocation
             if isinstance(self.paid_to, Teacher):
                 self.paid_to.unpaid_salary -= self.amount

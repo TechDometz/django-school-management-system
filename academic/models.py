@@ -48,7 +48,7 @@ class Subject(models.Model):
         return self.name
 
     class Meta:
-        ordering = ["name"]
+        ordering = ["subject_code"]
         verbose_name = "Subject"
         verbose_name_plural = "Subjects"
 
@@ -78,7 +78,6 @@ class Teacher(models.Model):
     tin_number = models.CharField(max_length=9, blank=True, null=True)
     nssf_number = models.CharField(max_length=9, blank=True, null=True)
     short_name = models.CharField(max_length=3, blank=True, null=True, unique=True)
-    isTeacher = models.BooleanField(default=True)
     salary = models.IntegerField(blank=True, null=True)
     unpaid_salary = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     subject_specialization = models.ManyToManyField(Subject, blank=True)
@@ -92,7 +91,7 @@ class Teacher(models.Model):
     inactive = models.BooleanField(default=False)
 
     class Meta:
-        ordering = ("first_name", "last_name")
+        ordering = ("id","first_name", "last_name")
 
     def __str__(self):
         return "{} {}".format(self.first_name, self.last_name)
