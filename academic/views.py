@@ -190,14 +190,9 @@ class BulkUploadSubjectsView(APIView):
                     subjects_to_create.append(subject)
 
                 except Exception as e:
-                    # Collect the row and its error
-                    not_created.append(
-                        {
-                            "row": i,
-                            "data": subject_data,
-                            "error": str(e),
-                        }
-                    )
+                    # Add row data and error message to the not_created list
+                    subject_data["error"] = str(e)
+                    not_created.append(subject_data)
 
             # Bulk create valid subjects
             if subjects_to_create:
@@ -205,7 +200,7 @@ class BulkUploadSubjectsView(APIView):
 
             return Response(
                 {
-                    "created": len(subjects_to_create),
+                    "message": f"{len(subjects_to_create)} subjects successfully uploaded.",
                     "not_created": not_created,
                 },
                 status=status.HTTP_201_CREATED,

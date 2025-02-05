@@ -410,7 +410,7 @@ class Student(models.Model):
     debt = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal("0.00"))
 
     class Meta:
-        ordering = ["last_name", "first_name", "admission_number"]
+        ordering = ["admission_number","last_name", "first_name"]
 
     def __str__(self):
         return f"{self.admission_number} - {self.first_name} {self.last_name} - Debt: {self.debt}"

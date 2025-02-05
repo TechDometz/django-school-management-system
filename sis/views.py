@@ -47,14 +47,20 @@ class StudentListView(APIView):
         if filters:
             students = students.filter(filters)
 
+        '''
         # Paginate the results
         paginator = self.StudentPagination()
         paginated_students = paginator.paginate_queryset(students, request)
         serializer = StudentSerializer(paginated_students, many=True)
         return paginator.get_paginated_response(serializer.data)
+        '''
+
+        serializer = StudentSerializer(students, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
     def post(self, request, format=None):
         data = request.data
+        print(data)
         serializer = StudentSerializer(data=data)
         if serializer.is_valid():
             student = serializer.save()
